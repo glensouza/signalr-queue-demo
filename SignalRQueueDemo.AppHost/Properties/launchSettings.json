@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "https": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "https://signalrqueuedemo.dev.localhost:17237;http://signalrqueuedemo.dev.localhost:15035",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DOTNET_ENVIRONMENT": "Development",
+        "ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL": "https://localhost:21268",
+        "ASPIRE_DASHBOARD_MCP_ENDPOINT_URL": "https://localhost:23185",
+        "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "https://localhost:22219"
+      }
+    },
+    "http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "http://signalrqueuedemo.dev.localhost:15035",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DOTNET_ENVIRONMENT": "Development",
+        "ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL": "http://localhost:19151",
+        "ASPIRE_DASHBOARD_MCP_ENDPOINT_URL": "http://localhost:18064",
+        "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "http://localhost:20043"
+      }
+    }
+  }
+}

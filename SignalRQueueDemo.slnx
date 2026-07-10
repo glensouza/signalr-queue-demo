@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="SignalRQueueDemo.ApiService/SignalRQueueDemo.ApiService.csproj" />
+  <Project Path="SignalRQueueDemo.AppHost/SignalRQueueDemo.AppHost.csproj" />
+  <Project Path="SignalRQueueDemo.ServiceDefaults/SignalRQueueDemo.ServiceDefaults.csproj" />
+  <Project Path="SignalRQueueDemo.Web/SignalRQueueDemo.Web.csproj" />
+</Solution>

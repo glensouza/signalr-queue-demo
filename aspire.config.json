@@ -1,0 +1,5 @@
+{
+  "appHost": {
+    "path": "SignalRQueueDemo.AppHost/SignalRQueueDemo.AppHost.csproj"
+  }
+}
