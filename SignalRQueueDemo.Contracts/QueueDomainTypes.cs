@@ -175,3 +175,27 @@ public sealed record QueueChangeEvent
   /// <summary>The entry as it existed at this change, so the client can replay history in order.</summary>
   public required QueueEntry Entry { get; init; }
 }
+
+/// <summary>
+/// The response to GET /queue/since/{sequenceNumber}. Replaying the missed <see cref="QueueChangeEvent"/>s is
+/// the common case, but a requested sequence number can't always be trusted or replayed cheaply — e.g. it's
+/// negative, ahead of anything the server ever issued (most likely a dev database was reset since the client
+/// last connected), or so far behind that the diff would be unreasonably large. Implementations fall back to
+/// a full <see cref="QueueSnapshot"/> in those cases rather than erroring, so a client never has to special-case
+/// "my sequence number wasn't accepted" — it always gets *something* to resync from. See the implementing
+/// repository (e.g. <c>SqliteQueueRepository</c>) for the exact cutoff it applies.
+/// </summary>
+public sealed record QueueChangesSinceResponse
+{
+  /// <summary>The latest sequence number as of this response — the client's new "last known" baseline either way.</summary>
+  public required long SequenceNumber { get; init; }
+
+  /// <summary>True when <see cref="Snapshot"/> is populated instead of <see cref="Changes"/> (see type remarks).</summary>
+  public required bool IsSnapshot { get; init; }
+
+  /// <summary>The ordered (ascending sequence number) list of missed changes. Populated only when <see cref="IsSnapshot"/> is false.</summary>
+  public IReadOnlyList<QueueChangeEvent>? Changes { get; init; }
+
+  /// <summary>The full current queue state to resync from. Populated only when <see cref="IsSnapshot"/> is true.</summary>
+  public QueueSnapshot? Snapshot { get; init; }
+}

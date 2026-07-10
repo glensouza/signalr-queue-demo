@@ -27,3 +27,14 @@ POST {{ApiService_HostAddress}}/queue/call-next
 ### returned). Returns 404 if the id doesn't exist, 409 if the entry isn't currently Serving.
 @entryId = replace-with-an-entry-id-from-get-queue
 POST {{ApiService_HostAddress}}/queue/{{entryId}}/complete
+
+###
+
+### Reconnect catch-up (issue #3): everything that changed after {{sinceSeq}}. Replace {{sinceSeq}} with a
+### sequence number noted from an earlier response (e.g. the one GET /queue returned before you called-next
+### or completed anything above). isSnapshot=false + changes=[...] is the common case; isSnapshot=true +
+### snapshot={...} means the requested number was unrecognized or too far behind — see
+### SqliteQueueRepository.GetChangesSinceAsync for the cutoff. Try 0 to see every change since the seeded data.
+@sinceSeq = 0
+GET {{ApiService_HostAddress}}/queue/since/{{sinceSeq}}
+Accept: application/json

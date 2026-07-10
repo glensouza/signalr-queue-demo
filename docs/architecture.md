@@ -20,7 +20,7 @@ flowchart TB
             staff["angular/internal-queue<br/>(nginx container)"]
         end
 
-        blazor["SignalRQueueDemo.Web<br/>Blazor Server — same 3 experiences,<br/>calls shared services in-process"]
+        blazor["SignalRQueueDemo.Web<br/>Blazor Server — same 3 experiences,<br/>self-encapsulated (shared library, no REST calls)"]
 
         api["SignalRQueueDemo.ApiService<br/>Minimal API + QueueHub (SignalR, self-hosted)"]
 
@@ -35,11 +35,19 @@ flowchart TB
     checkin -- "REST: POST /checkin, upload<br/>SignalR: QueueUpdated (+ polling fallback)" --> api
     staff -- "REST: call-next / complete<br/>SignalR: QueueUpdated" --> api
     display -- "SignalR: QueueUpdated" --> api
-    blazor -- "shared Contracts + services,<br/>HubConnection direct" --> api
+    blazor -. "SignalR only: QueueUpdated (live push)<br/>+ NotifyMutation (after a local write)" .-> api
     api -- "IQueueRepository (SQLite impl)" --> sqlite
     api -- "IQueueRepository (Table impl)<br/>documents (Blob)" --> azurite
     api -. "feature flag stub" .-> sigemu
 ```
+
+**Note on Blazor's client shape:** `SignalRQueueDemo.Web` is self-encapsulated — check-in/call-next/complete call
+directly into a shared queue-service library also referenced by `SignalRQueueDemo.ApiService` (no REST calls to
+the API). Blazor and `ApiService` still run as separate Aspire process resources, so Blazor can't reach
+`QueueHub`'s broadcast the way `QueueEndpoints` does; it closes that gap by reusing the SignalR `HubConnection`
+it already holds for live updates — after a local mutation, it invokes a hub method that tells `QueueHub` to
+broadcast, so every other client (Angular, other Blazor sessions) still sees the change. See "Blazor is
+self-encapsulated" in `docs/decisions.md` for the full reasoning.
 
 ## Trust boundaries
 
@@ -51,24 +59,35 @@ flowchart TB
 ## Reconnect / catch-up protocol
 
 The core demo requirement: a client that disconnects must catch up on missed state, not just resume live pushes.
+Implemented in issue #3: `QueueHub` (self-hosted, mapped at `/hubs/queue`) plus `GET /queue/since/{sequenceNumber}`.
 
 ```mermaid
 sequenceDiagram
     participant C as Client (any frontend)
     participant H as QueueHub
-    participant A as API
+    participant A as API (QueueEndpoints)
     participant R as IQueueRepository
 
     Note over A,R: every state change increments a monotonic sequence number
-    C->>H: connect / reconnect
-    H-->>C: QueueUpdated (live pushes, each carries seq N)
-    Note over C: connection drops — client remembers last seq it saw
+    C->>H: connect
+    H->>R: GetStateAsync (latest seq)
+    H-->>C: CurrentSequence(N) — baseline even if nothing changes for a while
+    A-->>H: after each checkin/call-next/complete commits...
+    H-->>C: QueueUpdated (live push, carries seq N+1, N+2, ...)
+    Note over C: connection drops — client remembers the highest seq it saw
     C->>A: GET /queue/since/{lastSeq}
-    A->>R: events after lastSeq
-    R-->>A: missed changes (or full snapshot if too far behind)
-    A-->>C: catch-up payload
-    C->>H: reconnect, resume live pushes from current seq
+    A->>R: GetChangesSinceAsync(lastSeq)
+    R-->>A: missed QueueChangeEvents (or full QueueSnapshot if lastSeq is unrecognized/too far behind)
+    A-->>C: QueueChangesSinceResponse
+    C->>H: reconnect
+    H-->>C: CurrentSequence(latest) — resume live pushes from here
 ```
+
+**Note on push ordering:** a broadcast only fires after its triggering write commits, so a client is always
+guaranteed to see committed state when it calls `GET /queue/since/{seq}` right after a push. Broadcasts from
+*concurrent* requests are not guaranteed to arrive in strict sequence-number order, though — clients must track
+the highest sequence number seen, not just the most recently arrived message. See the XML docs on `QueueHub`
+and the "Broadcasts happen at the REST endpoint layer" entry in `docs/decisions.md` for the full reasoning.
 
 ## Persistence
 

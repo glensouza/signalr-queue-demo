@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SignalRQueueDemo.ApiService.Endpoints;
+using SignalRQueueDemo.ApiService.Hubs;
 using SignalRQueueDemo.ApiService.Persistence;
 using SignalRQueueDemo.ApiService.Persistence.Sqlite;
 
@@ -38,6 +39,18 @@ builder.Services.AddDbContext<QueueDbContext>(options =>
     options.UseSqlite(connectionString).AddInterceptors(new QueueConnectionInterceptor()));
 builder.Services.AddScoped<IQueueRepository, SqliteQueueRepository>();
 
+// Self-hosted SignalR — the default topology per ADR-0001 Option C. No extra PackageReference needed:
+// Microsoft.NET.Sdk.Web already references the ASP.NET Core shared framework, which includes the SignalR
+// server. See SignalRQueueDemo.ApiService/Hubs/QueueHub.cs for the broadcast + reconnect catch-up protocol.
+// This is the default topology, not the only one: ADR-0001 documents a UseAzureSignalR feature-flag escape
+// hatch to the Azure SignalR emulator for higher concurrency; that flag and its Aspire wiring land in issue #7.
+builder.Services.AddSignalR();
+
+// The one place queue mutations broadcast QueueUpdated. Singleton because it holds only the singleton
+// IHubContext + a logger; see QueueBroadcaster for why broadcasting goes through it (single choke point +
+// a failed push can't fail an already-committed write).
+builder.Services.AddSingleton<QueueBroadcaster>();
+
 WebApplication app = builder.Build();
 
 app.UseExceptionHandler();
@@ -58,6 +71,11 @@ using (IServiceScope scope = app.Services.CreateScope())
 }
 
 app.MapQueueEndpoints();
+
+// No CORS or auth policy applied to this hub yet — every client today is same-project/localhost. The
+// lightweight public-endpoint hardening (restricted CORS + API-key pattern) is issue #6's job; a browser
+// client on a different origin (the future Angular containers) won't be able to connect until that lands.
+app.MapHub<QueueHub>("/hubs/queue");
 
 app.MapDefaultEndpoints();
 
