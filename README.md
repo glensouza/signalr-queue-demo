@@ -57,7 +57,9 @@ Endpoints (all shapes come from `SignalRQueueDemo.Contracts`):
 | `GET /queue/since/{sequenceNumber}` | public (hardened) | Reconnect catch-up: every change after that sequence number. |
 | `GET /queue/{id}/documents` | mock staff auth | Lists/streams uploaded documents for an entry. |
 
-> **Route correction from the original brief:** the brief specified `POST /queue/{id}/call-next`, but call-next selects the next entry itself — no id belongs in that route. Corrected to `POST /queue/call-next`; `{id}` remains on `complete`, which does act on a specific entry.
+> **Route correction from the original brief:** the brief specified `POST /queue/{id}/call-next`, but call-next selects the next entry itself — no id belongs in that route. Corrected to `POST /queue/call-next`; `{id}` remains on `complete`, which does act on a specific entry. See [`docs/decisions.md`](docs/decisions.md) for the full rationale, plus why the SQLite repository uses `EnsureCreated` instead of migrations.
+>
+> **Status:** `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, and `GET /queue` are implemented (issue #2) against `IQueueRepository` → `SqliteQueueRepository` (EF Core, `App_Data/queue.db`, git-ignored). `/queue/since/{sequenceNumber}` and the SignalR `QueueHub` broadcast land in issue #3; the document endpoints and Table Storage backend land in issues #4–5.
 
 - **`QueueHub`** broadcasts `QueueUpdated` on every state change. Self-hosted in-process (ADR-0001 Option C), with a feature-flag path to Azure SignalR (below).
 - **Reconnect resiliency:** every state change increments a **monotonic sequence number** persisted in a change-event log. Reconnecting clients call `GET /queue/since/{seq}` to replay what they missed — push-only delivery is never relied on.
@@ -116,18 +118,19 @@ Work is driven by [GitHub issues #1–#14](https://github.com/glensouza/signalr-
 
 ## Current repo status
 
-Fresh .NET Aspire starter scaffold (`net10.0`, Aspire.AppHost.Sdk 13.2.4) plus planning/standards docs. The sample Weather API/Blazor pages are template defaults, replaced starting at issue #2.
+.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository` (issue #2). The Blazor `Web` project and the Angular workspace are still template/not-yet-built — they land at issues #13 and #8–11 respectively.
 
 | Project / path | Purpose |
 |---|---|
 | `SignalRQueueDemo.AppHost` | Aspire orchestrator — brings up every resource with one command. |
-| `SignalRQueueDemo.ApiService` | Minimal API (template default today; becomes queue endpoints + `QueueHub`). |
-| `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums (QueueEntry, QueueStatus, QueueUpdated, etc.) — single source of truth for all wire shapes. |
-| `SignalRQueueDemo.Web` | Blazor Server frontend (template default today; becomes the three Blazor experiences). |
+| `SignalRQueueDemo.ApiService` | Minimal API: `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue` (issue #2), backed by `SqliteQueueRepository`. `QueueHub` + reconnect catch-up land in issue #3. |
+| `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums (QueueEntry, QueueStatus, QueueUpdated, QueueStateResponse, etc.) — single source of truth for all wire shapes. |
+| `SignalRQueueDemo.Web` | Blazor Server frontend (template default today; becomes the three Blazor experiences at issue #13). |
 | `SignalRQueueDemo.ServiceDefaults` | Shared Aspire defaults — OpenTelemetry, health checks, service discovery. |
 | `CLAUDE.md` | Coding + documentation standards for all contributors. |
 | `docs/architecture.md` | Living architecture doc (Mermaid diagrams, trust boundaries, reconnect protocol). |
 | `docs/architecture.drawio` | Editable diagram source (export to `architecture.drawio.png` — workflow in the doc). |
+| `docs/decisions.md` | Dated log of implementation decisions not fully covered by the original spec. |
 
 ## Running it today
 
@@ -136,7 +139,18 @@ aspire run
 # or: dotnet run --project SignalRQueueDemo.AppHost
 ```
 
-Opens the Aspire dashboard with the API service and Blazor Web app (template defaults; real-time queue features land per the implementation plan). The final README will include the full manual demo script: check in → call next → kill and restart a client mid-session → confirm it catches up.
+Opens the Aspire dashboard with the API service and Blazor Web app (Blazor is still template defaults; real-time queue features land per the implementation plan).
+
+### Exercising the queue API manually
+
+With the API running (`aspire run`, or `dotnet run --project SignalRQueueDemo.ApiService` standalone on `http://localhost:5410`), open `SignalRQueueDemo.ApiService/SignalRQueueDemo.ApiService.http` in an editor with REST Client support (VS Code's REST Client extension, or Visual Studio's built-in `.http` runner) and run requests top to bottom:
+
+1. `GET /queue` — confirm the seeded entries ("Jane Test" / A-042, "Sam Sample" / A-043) show up as `Waiting`, and note the sequence number.
+2. `POST /checkin` — check in a new fake visitor; response includes their position and the new sequence number.
+3. `POST /queue/call-next` — the oldest `Waiting` entry (Jane Test) moves to `Serving`; response is the `QueueUpdated` broadcast payload. Calling it again with an empty queue returns `409 Conflict`.
+4. `POST /queue/{id}/complete` — copy an entry id from a prior response into the `@entryId` variable, then complete it. A `Serving` entry moves to `Completed`; a wrong-status or unknown id returns `409`/`404` respectively.
+
+This is the full check-in → call-next → complete lifecycle; the reconnect/catch-up half of the manual script (kill and restart a client mid-session, confirm it catches up) lands with the SignalR hub in issue #3.
 
 ## Angular vs. Blazor comparison
 

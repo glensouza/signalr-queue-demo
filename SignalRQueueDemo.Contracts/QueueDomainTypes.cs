@@ -149,6 +149,20 @@ public sealed record QueueSnapshot
 }
 
 /// <summary>
+/// The response to GET /queue: the full current snapshot plus the latest sequence number, so a client
+/// loading for the first time (not reconnecting) can start tracking sequence numbers from a known point
+/// without a separate round-trip to discover it.
+/// </summary>
+public sealed record QueueStateResponse
+{
+  /// <summary>The most recent sequence number of any change applied so far (0 if the queue has never changed).</summary>
+  public required long SequenceNumber { get; init; }
+
+  /// <summary>The current snapshot of all queue entries and their status counts.</summary>
+  public required QueueSnapshot Snapshot { get; init; }
+}
+
+/// <summary>
 /// A single row in the change-event log returned by GET /queue/since/{sequenceNumber}. The API returns
 /// all QueueChangeEvent records with sequence numbers greater than the requested number, so a reconnecting
 /// client can replay the full queue history since its last known state and catch up deterministically.

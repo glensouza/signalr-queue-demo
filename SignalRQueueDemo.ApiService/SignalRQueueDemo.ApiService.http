@@ -1,6 +1,29 @@
 @ApiService_HostAddress = http://localhost:5410
 
-GET {{ApiService_HostAddress}}/weatherforecast/
+### Current queue state + latest sequence number. Seeded with "Jane Test" (A-042) and "Sam Sample" (A-043)
+### on first run against a fresh database.
+GET {{ApiService_HostAddress}}/queue
 Accept: application/json
 
 ###
+
+### Check in a new visitor. Server assigns the id, position, and sequence number.
+POST {{ApiService_HostAddress}}/checkin
+Content-Type: application/json
+
+{
+  "displayName": "Sam Sample Two",
+  "ticketNumber": "A-044"
+}
+
+###
+
+### Call the oldest Waiting entry to Serving. Returns 409 Conflict if nobody is Waiting.
+POST {{ApiService_HostAddress}}/queue/call-next
+
+###
+
+### Complete a Serving entry (replace {{entryId}} with an id from GET /queue, e.g. the one call-next just
+### returned). Returns 404 if the id doesn't exist, 409 if the entry isn't currently Serving.
+@entryId = replace-with-an-entry-id-from-get-queue
+POST {{ApiService_HostAddress}}/queue/{{entryId}}/complete
