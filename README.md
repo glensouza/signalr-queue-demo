@@ -122,6 +122,7 @@ Fresh .NET Aspire starter scaffold (`net10.0`, Aspire.AppHost.Sdk 13.2.4) plus p
 |---|---|
 | `SignalRQueueDemo.AppHost` | Aspire orchestrator — brings up every resource with one command. |
 | `SignalRQueueDemo.ApiService` | Minimal API (template default today; becomes queue endpoints + `QueueHub`). |
+| `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums (QueueEntry, QueueStatus, QueueUpdated, etc.) — single source of truth for all wire shapes. |
 | `SignalRQueueDemo.Web` | Blazor Server frontend (template default today; becomes the three Blazor experiences). |
 | `SignalRQueueDemo.ServiceDefaults` | Shared Aspire defaults — OpenTelemetry, health checks, service discovery. |
 | `CLAUDE.md` | Coding + documentation standards for all contributors. |
