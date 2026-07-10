@@ -59,10 +59,10 @@ Endpoints (all shapes come from `SignalRQueueDemo.Contracts`):
 
 > **Route correction from the original brief:** the brief specified `POST /queue/{id}/call-next`, but call-next selects the next entry itself — no id belongs in that route. Corrected to `POST /queue/call-next`; `{id}` remains on `complete`, which does act on a specific entry. See [`docs/decisions.md`](docs/decisions.md) for the full rationale, plus why the SQLite repository uses `EnsureCreated` instead of migrations.
 >
-> **Status:** `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, and `GET /queue` are implemented (issue #2) against `IQueueRepository` → `SqliteQueueRepository` (EF Core, `App_Data/queue.db`, git-ignored). `/queue/since/{sequenceNumber}` and the SignalR `QueueHub` broadcast land in issue #3; the document endpoints and Table Storage backend land in issues #4–5.
+> **Status:** `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, and `GET /queue/since/{sequenceNumber}` are implemented (issues #2–#3) against `IQueueRepository` → `SqliteQueueRepository` (EF Core, `App_Data/queue.db`, git-ignored), plus the self-hosted `QueueHub` (mapped at `/hubs/queue`) broadcasting `QueueUpdated`. The document endpoints and Table Storage backend land in issues #4–5.
 
-- **`QueueHub`** broadcasts `QueueUpdated` on every state change. Self-hosted in-process (ADR-0001 Option C), with a feature-flag path to Azure SignalR (below).
-- **Reconnect resiliency:** every state change increments a **monotonic sequence number** persisted in a change-event log. Reconnecting clients call `GET /queue/since/{seq}` to replay what they missed — push-only delivery is never relied on.
+- **`QueueHub`** (`SignalRQueueDemo.ApiService/Hubs/QueueHub.cs`) broadcasts `QueueUpdated` on every state change and sends `CurrentSequence` on connect so a client always has a baseline. Self-hosted in-process (ADR-0001 Option C), with a feature-flag path to Azure SignalR (below).
+- **Reconnect resiliency:** every state change increments a **monotonic sequence number** persisted in a change-event log. Reconnecting clients call `GET /queue/since/{seq}` to replay what they missed — push-only delivery is never relied on. See [`docs/architecture.md`](docs/architecture.md#reconnect--catch-up-protocol) for the full sequence diagram and the push-ordering caveat.
 - **Persistence:** behind an `IQueueRepository` interface with two signature-compatible implementations — **SQLite via EF Core** (default) and **Azure Table Storage** (against the Azurite emulator) — selected by config.
 - **Auth model:** no auth on the public check-in path, but lightweight hardening (restricted CORS + short-lived anti-forgery token) to demonstrate the public-internet posture honestly. Staff endpoints use simple mock auth (`X-Staff-Key` header) to model the internal-vs-public trust boundary — no real Entra ID in the POC.
 
@@ -82,7 +82,7 @@ A shared library holds the API client, the TypeScript contract mirrors, and the 
 
 ### 4. `SignalRQueueDemo.Web` — Blazor Server, same three experiences
 
-Public check-in, internal call-next, and queue display as Blazor pages — no REST client needed; uses the shared Contracts and a direct SignalR `HubConnection` since it's already .NET. This is the comparison stack: the UI stays simple on purpose, the point is comparing plumbing, not polish.
+Public check-in, internal call-next, and queue display as Blazor pages — self-encapsulated, not a REST client of the API: check-in/call-next/complete call directly into a shared queue-service library also referenced by `SignalRQueueDemo.ApiService`, reusing the same `IQueueRepository` code rather than round-tripping to its own sibling process. A direct SignalR `HubConnection` to `QueueHub` still handles live updates, and doubles as the way Blazor tells the hub to broadcast after one of its own local writes (see [`docs/decisions.md`](docs/decisions.md)). This is the comparison stack: the UI stays simple on purpose, the point is comparing plumbing, not polish.
 
 ### 5. `SignalRQueueDemo.AppHost` — orchestrates all of it
 
@@ -123,7 +123,7 @@ Work is driven by [GitHub issues #1–#14](https://github.com/glensouza/signalr-
 | Project / path | Purpose |
 |---|---|
 | `SignalRQueueDemo.AppHost` | Aspire orchestrator — brings up every resource with one command. |
-| `SignalRQueueDemo.ApiService` | Minimal API: `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue` (issue #2), backed by `SqliteQueueRepository`. `QueueHub` + reconnect catch-up land in issue #3. |
+| `SignalRQueueDemo.ApiService` | Minimal API: `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, `GET /queue/since/{sequenceNumber}` (issues #2–#3), backed by `SqliteQueueRepository`, plus the self-hosted `QueueHub` (`/hubs/queue`) broadcasting `QueueUpdated`. |
 | `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums (QueueEntry, QueueStatus, QueueUpdated, QueueStateResponse, etc.) — single source of truth for all wire shapes. |
 | `SignalRQueueDemo.Web` | Blazor Server frontend (template default today; becomes the three Blazor experiences at issue #13). |
 | `SignalRQueueDemo.ServiceDefaults` | Shared Aspire defaults — OpenTelemetry, health checks, service discovery. |
@@ -150,7 +150,20 @@ With the API running (`aspire run`, or `dotnet run --project SignalRQueueDemo.Ap
 3. `POST /queue/call-next` — the oldest `Waiting` entry (Jane Test) moves to `Serving`; response is the `QueueUpdated` broadcast payload. Calling it again with an empty queue returns `409 Conflict`.
 4. `POST /queue/{id}/complete` — copy an entry id from a prior response into the `@entryId` variable, then complete it. A `Serving` entry moves to `Completed`; a wrong-status or unknown id returns `409`/`404` respectively.
 
-This is the full check-in → call-next → complete lifecycle; the reconnect/catch-up half of the manual script (kill and restart a client mid-session, confirm it catches up) lands with the SignalR hub in issue #3.
+This is the full check-in → call-next → complete lifecycle.
+
+### Manually verifying the reconnect/catch-up protocol (issue #3)
+
+The `.http` file alone can't hold a live SignalR connection open, so this needs a small standalone client — either a
+throwaway `dotnet run` console app using `Microsoft.AspNetCore.SignalR.Client` (`HubConnectionBuilder().WithUrl("http://localhost:5410/hubs/queue").Build()`), or two browser tabs once a frontend exists (issues #8–13). Steps:
+
+1. Connect the client to `/hubs/queue`. Confirm it immediately receives `CurrentSequence(N)` — this is the "you're caught up as of right now" baseline sent from `QueueHub.OnConnectedAsync`.
+2. From the `.http` file, run `POST /checkin`. Confirm the connected client receives a `QueueUpdated` push with `SequenceNumber = N + 1`.
+3. Disconnect the client (kill the console app, or close the tab) — simulating a kiosk losing wifi or staff stepping away. Note the last sequence number it saw (`N + 1`).
+4. With the client still disconnected, run `POST /queue/call-next` then `POST /queue/{id}/complete` from the `.http` file — two more state changes the disconnected client will miss entirely.
+5. Reconnect the client. It receives a fresh `CurrentSequence` (now `N + 3`), proving live push alone would have skipped the two changes made while it was offline.
+6. Call `GET /queue/since/{N + 1}` (edit `@sinceSeq` in the `.http` file). Confirm the response has `isSnapshot: false` and `changes` contains **exactly** the two missed events (call-next then complete, in that order) — this is the acceptance criterion for issue #3.
+7. Optional — exercise the snapshot fallback: call `GET /queue/since/999999` (an unrecognized/future sequence number). Confirm the response has `isSnapshot: true` with a full `snapshot` instead of `changes`.
 
 ## Angular vs. Blazor comparison
 
