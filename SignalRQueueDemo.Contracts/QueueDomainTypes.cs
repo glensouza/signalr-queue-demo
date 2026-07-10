@@ -17,24 +17,47 @@ public enum QueueStatus
 /// repository backend — both SQLite and Azure Table Storage implementations return the same shape, so
 /// API clients never know which persistence layer is in use.
 /// </summary>
-public sealed record QueueEntry(
-  string Id,
-  string DisplayName,
-  string TicketNumber,
-  DateTimeOffset CheckedInAt,
-  QueueStatus Status,
-  string? ServedBy = null,
-  DateTimeOffset? ServedAt = null
-);
+/// <remarks>
+/// Members are <c>required</c> init-only rather than positional so the compiler forces every caller to name
+/// the non-nullable fields (per CLAUDE.md) — a partial <c>new QueueEntry { }</c> won't compile, and
+/// System.Text.Json rejects a payload missing a required field on deserialization.
+/// </remarks>
+public sealed record QueueEntry
+{
+  /// <summary>Server-assigned unique identifier for the entry (the client never supplies it).</summary>
+  public required string Id { get; init; }
+
+  /// <summary>The visitor's display name — synthetic test data only in this POC (e.g. "Jane Test").</summary>
+  public required string DisplayName { get; init; }
+
+  /// <summary>The paper/kiosk ticket number the visitor holds (e.g. "A-042").</summary>
+  public required string TicketNumber { get; init; }
+
+  /// <summary>When the visitor checked in. DateTimeOffset (not DateTime) so the instant is unambiguous across time zones.</summary>
+  public required DateTimeOffset CheckedInAt { get; init; }
+
+  /// <summary>Current lifecycle state; drives which frontend surfaces the entry appears on.</summary>
+  public required QueueStatus Status { get; init; }
+
+  /// <summary>Which staff member called this entry, or null while still Waiting. Nullable because it only exists once served.</summary>
+  public string? ServedBy { get; init; }
+
+  /// <summary>When the entry moved to Serving, or null while still Waiting.</summary>
+  public DateTimeOffset? ServedAt { get; init; }
+}
 
 /// <summary>
 /// The payload submitted when a visitor checks in at the kiosk. Minimal: name and ticket number only.
 /// The server assigns the ID and position.
 /// </summary>
-public sealed record CheckInRequest(
-  string DisplayName,
-  string TicketNumber
-);
+public sealed record CheckInRequest
+{
+  /// <summary>The visitor's display name — synthetic test data only in this POC.</summary>
+  public required string DisplayName { get; init; }
+
+  /// <summary>The ticket number the visitor holds.</summary>
+  public required string TicketNumber { get; init; }
+}
 
 /// <summary>
 /// The response to a successful check-in. Tells the kiosk app "you are entry ID X, position Y in line,
@@ -42,12 +65,20 @@ public sealed record CheckInRequest(
 /// on push-only SignalR delivery." The entry object is redundant with position (you can compute it), but
 /// included for convenience on mobile kiosks that may want to render the full entry data immediately.
 /// </summary>
-public sealed record CheckInResponse(
-  string EntryId,
-  int Position,
-  long SequenceNumber,
-  QueueEntry Entry
-);
+public sealed record CheckInResponse
+{
+  /// <summary>The server-assigned id of the newly created entry, so the kiosk can track its own row.</summary>
+  public required string EntryId { get; init; }
+
+  /// <summary>1-based position in line at the moment of check-in ("you're #N").</summary>
+  public required int Position { get; init; }
+
+  /// <summary>The current monotonic sequence number, stored client-side to drive reconnect catch-up.</summary>
+  public required long SequenceNumber { get; init; }
+
+  /// <summary>The full created entry, so the kiosk can render immediately without a follow-up GET.</summary>
+  public required QueueEntry Entry { get; init; }
+}
 
 /// <summary>
 /// Broadcast from the server every time the queue state changes. The sequence number is the backbone of
@@ -57,30 +88,76 @@ public sealed record CheckInResponse(
 /// the same sequence number. Relying on push-only SignalR delivery is never safe; a client that misses a
 /// message between connection loss and reconnect must be able to catch up deterministically.
 /// </summary>
-public sealed record QueueUpdated(
-  long SequenceNumber,
-  QueueEntry ChangedEntry,
-  QueueSnapshot Summary
-);
+public sealed record QueueUpdated
+{
+  /// <summary>The monotonic sequence number for this change — strictly greater than the previous broadcast.</summary>
+  public required long SequenceNumber { get; init; }
+
+  /// <summary>The single entry whose state changed, so clients can animate/highlight just that row.</summary>
+  public required QueueEntry ChangedEntry { get; init; }
+
+  /// <summary>Full queue snapshot alongside the delta, so clients never have to infer total state from one change.</summary>
+  public required QueueSnapshot Summary { get; init; }
+}
 
 /// <summary>
 /// Summary snapshot of the queue included in QueueUpdated. Tells connected clients (kiosk display, staff
 /// console, waiting-room board) the current state of all entries without forcing them to infer it from
 /// the single changed entry. Includes a count of waiting and serving entries.
 /// </summary>
-public sealed record QueueSnapshot(
-  int TotalWaiting,
-  int TotalServing,
-  int TotalCompleted,
-  IReadOnlyList<QueueEntry> Queue
-);
+/// <remarks>
+/// Equality is overridden to compare <see cref="Queue"/> element-by-element. The compiler-generated record
+/// equality would use reference equality on the <see cref="IReadOnlyList{T}"/>, so two snapshots with
+/// identical contents would compare unequal — breaking any "did the state actually change?" check.
+/// </remarks>
+public sealed record QueueSnapshot
+{
+  /// <summary>Count of entries currently Waiting — cheap for boards to render without filtering the list.</summary>
+  public required int TotalWaiting { get; init; }
+
+  /// <summary>Count of entries currently Serving.</summary>
+  public required int TotalServing { get; init; }
+
+  /// <summary>Count of entries Completed (typically hidden by displays, kept for staff totals).</summary>
+  public required int TotalCompleted { get; init; }
+
+  /// <summary>The full ordered list of entries in the snapshot.</summary>
+  public required IReadOnlyList<QueueEntry> Queue { get; init; }
+
+  /// <summary>Structural equality: two snapshots are equal when their counts and every queue element match in order.</summary>
+  public bool Equals(QueueSnapshot? other) =>
+    other is not null
+    && this.TotalWaiting == other.TotalWaiting
+    && this.TotalServing == other.TotalServing
+    && this.TotalCompleted == other.TotalCompleted
+    && this.Queue.SequenceEqual(other.Queue);
+
+  /// <summary>Hash code consistent with <see cref="Equals(QueueSnapshot?)"/>, folding in each queue element.</summary>
+  public override int GetHashCode()
+  {
+    HashCode hash = new();
+    hash.Add(this.TotalWaiting);
+    hash.Add(this.TotalServing);
+    hash.Add(this.TotalCompleted);
+    foreach (QueueEntry entry in this.Queue)
+    {
+      hash.Add(entry);
+    }
+
+    return hash.ToHashCode();
+  }
+}
 
 /// <summary>
 /// A single row in the change-event log returned by GET /queue/since/{sequenceNumber}. The API returns
 /// all QueueChangeEvent records with sequence numbers greater than the requested number, so a reconnecting
 /// client can replay the full queue history since its last known state and catch up deterministically.
 /// </summary>
-public sealed record QueueChangeEvent(
-  long SequenceNumber,
-  QueueEntry Entry
-);
+public sealed record QueueChangeEvent
+{
+  /// <summary>The monotonic sequence number this change was assigned when it happened.</summary>
+  public required long SequenceNumber { get; init; }
+
+  /// <summary>The entry as it existed at this change, so the client can replay history in order.</summary>
+  public required QueueEntry Entry { get; init; }
+}
