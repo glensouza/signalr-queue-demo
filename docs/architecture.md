@@ -12,12 +12,12 @@ flowchart TB
         direction TB
 
         subgraph public["Public trust zone (no user auth, hardened endpoints)"]
-            checkin["angular/public-checkin<br/>(nginx container)"]
-            display["angular/queue-display<br/>(nginx container)"]
+            checkin["public-checkin<br/>(Angular · nginx container)"]
+            display["queue-display<br/>(Angular · nginx container)"]
         end
 
         subgraph internal["Internal trust zone (mock staff auth)"]
-            staff["angular/internal-queue<br/>(nginx container)"]
+            staff["internal-queue<br/>(Angular · nginx container)"]
         end
 
         blazor["SignalRQueueDemo.Web<br/>Blazor Server — same 3 experiences,<br/>self-encapsulated (shared library, no REST calls)"]
@@ -90,6 +90,27 @@ guaranteed to see committed state when it calls `GET /queue/since/{seq}` right a
 *concurrent* requests are not guaranteed to arrive in strict sequence-number order, though — clients must track
 the highest sequence number seen, not just the most recently arrived message. See the XML docs on `QueueHub`
 and the "Broadcasts happen at the REST endpoint layer" entry in `docs/decisions.md` for the full reasoning.
+
+**Angular reference client (`SignalRQueueDemo.Angular/projects/shared/src/lib/services/queue-hub.service.ts`):** `QueueHubService`
+implements this exact sequence — seeds state from `GET /queue`, connects with SignalR's `withAutomaticReconnect`,
+tracks the highest sequence number seen (never overwritten, only `Math.max`'d, matching the push-ordering note
+above), and calls `GET /queue/since/{seq}` in its `onreconnected` handler to replay whatever was missed. It also
+falls back to polling `GET /queue` on an interval if the initial `HubConnection.start()` never succeeds (or the
+socket is later given up on after exhausting automatic-reconnect) — SignalR's automatic reconnect only covers a
+connection that dropped *after* connecting once, not an initial connection that never came up, so this fallback
+covers the gap. All three Angular apps (`public-checkin`, `internal-queue`, `queue-display`) depend on this one
+service instead of each opening their own `HubConnection` — see [`SignalRQueueDemo.Angular/README.md`](../SignalRQueueDemo.Angular/README.md).
+
+## Type mirroring (Angular)
+
+`SignalRQueueDemo.Angular/projects/shared/src/lib/models/*.models.ts` hand-mirrors every `SignalRQueueDemo.Contracts` record as a
+TypeScript interface — each interface's doc comment names the C# type it mirrors, and both sides are meant to be
+updated together (see CLAUDE.md). Two wire-format details fall out of ASP.NET Core minimal APIs' default
+(`JsonSerializerDefaults.Web`) `System.Text.Json` options, since `Program.cs` registers no naming policy or enum
+converter override: JSON property names are camelCase (not the C# PascalCase), and enums serialize as their
+numeric value, not their name — `QueueStatus` in `queue.models.ts` is declared with explicit numeric values
+matching the C# enum's declaration order for exactly this reason. Hand-written mirroring (not OpenAPI/NSwag
+generation) was chosen for this POC's size; see `docs/decisions.md` if that judgment call is ever revisited.
 
 ## Persistence
 

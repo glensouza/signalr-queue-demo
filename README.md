@@ -72,7 +72,7 @@ Endpoints (all shapes come from `SignalRQueueDemo.Contracts`):
 
 Referenced by `ApiService` and `Web` (Blazor). The Angular workspace mirrors the same shapes as TypeScript types.
 
-### 3. Angular workspace (`angular/`) — three apps, one shared library
+### 3. Angular workspace (`SignalRQueueDemo.Angular/`) — three apps, one shared library
 
 | App | Purpose |
 |---|---|
@@ -81,6 +81,8 @@ Referenced by `ApiService` and `Web` (Blazor). The Angular workspace mirrors the
 | `queue-display` | Public waiting-room board (tickets, never names); serving/waiting status; completed entries disappear. |
 
 A shared library holds the API client, the TypeScript contract mirrors, and the SignalR connection service with sequence-number tracking, reconnect catch-up, and polling fallback. Each app gets its own multi-stage `Dockerfile` (Node build stage → nginx static serving) with the API address injected at **runtime** from Aspire service discovery — never baked in at build time.
+
+> **Status:** the workspace, `shared` library, and all three app shells are built (#8) — `npm ci && npm run build` succeeds, and each shell shows live `QueueUpdated` events via `QueueHubService` against a running API (verified against a standalone `dotnet run` of `ApiService`, including a live SignalR client receiving a push after `POST /checkin`). The shared library covers every endpoint on `QueueEndpoints`/`DocumentEndpoints`, mirrors every `SignalRQueueDemo.Contracts` record, and resolves its API base URL from a runtime-fetched `SignalRQueueDemo.Angular/projects/*/public/config.json` rather than a build-time `environment.ts` — see [`SignalRQueueDemo.Angular/README.md`](SignalRQueueDemo.Angular/README.md) for why. The real check-in/staff/display UIs (#9-#11) and the containerized `aspire run` wiring (#12) are still ahead.
 
 ### 4. `SignalRQueueDemo.Web` — Blazor Server, same three experiences
 
@@ -122,7 +124,7 @@ Work is executed as an ordered, dependency-aware backlog of 14 work items, each 
 
 ## Current repo status
 
-.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository`, now with two swappable backends, plus document upload/viewing behind `IDocumentRepository` and `DocumentBlobStore`. The Blazor `Web` project and the Angular workspace are still template/not-yet-built — they are built in later work items.
+.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository`, now with two swappable backends, plus document upload/viewing behind `IDocumentRepository` and `DocumentBlobStore`. The Angular workspace (`SignalRQueueDemo.Angular/`) has its `shared` library and three app shells built (#8) — see [Angular workspace](#3-angular-workspace-signalrqueuedemoangular--three-apps-one-shared-library) above. The Blazor `Web` project and the three real Angular app UIs (#9-#11) are still template/not-yet-built — they are built in later work items.
 
 | Project / path | Purpose |
 |---|---|
@@ -130,6 +132,7 @@ Work is executed as an ordered, dependency-aware backlog of 14 work items, each 
 | `SignalRQueueDemo.ApiService` | Minimal API: `GET /checkin/token`, `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, `GET /queue/since/{sequenceNumber}`, backed by `IQueueRepository` → `SqliteQueueRepository` or `TableStorageQueueRepository` (config-selected); plus `POST /checkin/{id}/documents`, `GET /queue/{id}/documents`, `GET /queue/{id}/documents/{docId}`, backed by `IDocumentRepository` (same config-selected backend) and `DocumentBlobStore` (Azurite Blob Storage, not config-selected); staff routes and document viewing gated by `StaffAuthFilter`, the check-in path by a short-lived check-in token, all browser surfaces (REST + hub) behind the `KnownFrontends` CORS policy (see [Security model](#security-model)); plus the self-hosted `QueueHub` (`/hubs/queue`) broadcasting `QueueUpdated`, and the `UseAzureSignalR` escape hatch (`AzureSignalRDefaultModeStub`, `AzureSignalRServerlessDemoService`). |
 | `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums (QueueEntry, QueueStatus, QueueUpdated, QueueStateResponse, DocumentMetadata, etc.) — single source of truth for all wire shapes. |
 | `SignalRQueueDemo.Web` | Blazor Server frontend (template default today; becomes the three Blazor experiences in later work). |
+| `SignalRQueueDemo.Angular/` | Angular workspace: `projects/shared` library (TypeScript `Contracts` mirrors, `QueueApiService`, `QueueHubService`) plus `projects/public-checkin`, `projects/internal-queue`, `projects/queue-display` app shells (real UIs land in #9-#11). See [`SignalRQueueDemo.Angular/README.md`](SignalRQueueDemo.Angular/README.md). |
 | `SignalRQueueDemo.ServiceDefaults` | Shared Aspire defaults — OpenTelemetry, health checks, service discovery. |
 | `CLAUDE.md` | Coding + documentation standards for all contributors. |
 | `docs/architecture.md` | Living architecture doc (Mermaid diagrams, trust boundaries, reconnect protocol). |

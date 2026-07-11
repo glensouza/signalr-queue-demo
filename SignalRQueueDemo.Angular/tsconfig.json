@@ -1,0 +1,54 @@
+/* To learn more about Typescript configuration file: https://www.typescriptlang.org/docs/handbook/tsconfig-json.html. */
+/* To learn more about Angular compiler options: https://angular.dev/reference/configs/angular-compiler-options. */
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "experimentalDecorators": true,
+    "importHelpers": true,
+    "paths": {
+      "shared": ["./dist/shared"]
+    },
+    "target": "ES2022",
+    "module": "preserve"
+  },
+  "angularCompilerOptions": {
+    "enableI18nLegacyMessageIdFormat": false,
+    "strictInjectionParameters": true,
+    "strictInputAccessModifiers": true,
+    "strictTemplates": true
+  },
+  "files": [],
+  "references": [
+    {
+      "path": "./projects/shared/tsconfig.lib.json"
+    },
+    {
+      "path": "./projects/shared/tsconfig.spec.json"
+    },
+    {
+      "path": "./projects/public-checkin/tsconfig.app.json"
+    },
+    {
+      "path": "./projects/public-checkin/tsconfig.spec.json"
+    },
+    {
+      "path": "./projects/internal-queue/tsconfig.app.json"
+    },
+    {
+      "path": "./projects/internal-queue/tsconfig.spec.json"
+    },
+    {
+      "path": "./projects/queue-display/tsconfig.app.json"
+    },
+    {
+      "path": "./projects/queue-display/tsconfig.spec.json"
+    }
+  ]
+}

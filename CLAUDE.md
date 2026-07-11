@@ -23,10 +23,10 @@ aspire run                      # or: dotnet run --project SignalRQueueDemo.AppH
 dotnet build SignalRQueueDemo.slnx
 dotnet test
 
-# Angular (from angular/<app-name>)
+# Angular (from SignalRQueueDemo.Angular/ — one workspace, three apps + shared lib)
 npm ci
-npm start
-npm run build
+npm run build                   # shared lib + all three apps
+npm run start:public-checkin    # or start:internal-queue / start:queue-display
 ```
 
 ## Solution layout
@@ -38,9 +38,10 @@ npm run build
 | `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums referenced by API and Blazor. Angular mirrors these shapes in TypeScript. |
 | `SignalRQueueDemo.Web` | Blazor Server implementation of the three experiences. |
 | `SignalRQueueDemo.ServiceDefaults` | Aspire defaults: OpenTelemetry, health checks, service discovery. |
-| `angular/public-checkin` | Kiosk check-in app (no auth, containerized). |
-| `angular/internal-queue` | Staff call-next console (mock auth, containerized). |
-| `angular/queue-display` | Public queue status display (containerized). |
+| `SignalRQueueDemo.Angular` | Angular workspace (one CLI multi-project workspace): `projects/shared` library + three app projects below. |
+| `SignalRQueueDemo.Angular/projects/public-checkin` | Kiosk check-in app (no auth, containerized). |
+| `SignalRQueueDemo.Angular/projects/internal-queue` | Staff call-next console (mock auth, containerized). |
+| `SignalRQueueDemo.Angular/projects/queue-display` | Public queue status display (containerized). |
 | `docs/` | Architecture docs and diagrams — see "Documentation is part of every change". |
 
 Keep the `SignalRQueueDemo.*` project-name prefix for new .NET projects (matches the existing scaffold).
