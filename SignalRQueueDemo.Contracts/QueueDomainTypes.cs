@@ -47,6 +47,18 @@ public sealed record QueueEntry
 }
 
 /// <summary>
+/// The response to GET /checkin/token: a short-lived, server-signed token a kiosk client must echo back on the
+/// X-CheckIn-Token header of its next POST /checkin (and POST /checkin/{id}/documents). See
+/// SignalRQueueDemo.ApiService.Endpoints.CheckInTokenService for what this token does and doesn't protect
+/// against, and why it exists instead of ASP.NET Core's cookie-based antiforgery system.
+/// </summary>
+public sealed record CheckInTokenResponse
+{
+  /// <summary>The opaque token value — treat it as an opaque string, not something to parse client-side.</summary>
+  public required string Token { get; init; }
+}
+
+/// <summary>
 /// The payload submitted when a visitor checks in at the kiosk. Minimal: name and ticket number only.
 /// The server assigns the ID and position.
 /// </summary>

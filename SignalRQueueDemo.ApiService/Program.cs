@@ -15,6 +15,35 @@ builder.AddServiceDefaults();
 
 builder.Services.AddProblemDetails();
 
+// Fail fast at startup if the auth secrets are missing, rather than letting the omission surface as an opaque
+// 500 on the first staff request (StaffAuthFilter) or first token issuance (CheckInTokenService). appsettings.json
+// ships obvious placeholders for both; a real deployment overrides them via user-secrets/environment.
+string[] requiredSecretKeys = ["StaffAuth:Key", "CheckInToken:SigningKey"];
+foreach (string requiredKey in requiredSecretKeys)
+{
+    if (string.IsNullOrEmpty(builder.Configuration[requiredKey]))
+    {
+        throw new InvalidOperationException($"Missing required configuration '{requiredKey}'.");
+    }
+}
+
+// DECISION: allowed origins are config-driven (Cors:AllowedOrigins), not hardcoded or read from Aspire service
+// discovery. The Angular apps (public-checkin, queue-display, internal-queue) don't exist as AppHost project
+// resources yet — they're later work items — so there's no service-discovery-injected origin to read today.
+// appsettings.json seeds this with the Angular CLI dev-server's default port as a placeholder; the Angular work
+// items update it to the real container origins once those resources exist. The one policy covers every known
+// browser frontend (public and staff) and is applied to every browser-reachable surface — the REST endpoints
+// and the SignalR hub below — because CORS isn't the trust boundary (StaffAuthFilter/CheckInTokenFilter are);
+// it only keeps legitimate frontends from being refused by the browser before those checks run. See docs/decisions.md.
+string[] knownFrontendOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddCors(options => options.AddPolicy(
+  CorsPolicies.KnownFrontends,
+  policy => policy.WithOrigins(knownFrontendOrigins).AllowAnyHeader().AllowAnyMethod()));
+
+// Stateless HMAC token issuer/validator for the public check-in path's anti-forgery-style hardening — see
+// CheckInTokenService's remarks for why this exists instead of ASP.NET Core's cookie-based antiforgery system.
+builder.Services.AddSingleton<CheckInTokenService>();
+
 // Maps the framework's "request body too large" failures (multipart body-length limit on the document-upload
 // endpoint, or a server body-size limit) to a clean 413 ProblemDetails instead of an opaque 500 — see
 // UploadLimitExceptionHandler. Runs ahead of the default handler registered by UseExceptionHandler below.
@@ -106,6 +135,11 @@ WebApplication app = builder.Build();
 
 app.UseExceptionHandler();
 
+// Enables the per-endpoint/-hub .RequireCors(...) policies applied in QueueEndpoints, DocumentEndpoints, and on
+// the hub below. UseCors() itself defines no default policy — only the surfaces that opt in via RequireCors are
+// reachable cross-origin, and only from the configured origins.
+app.UseCors();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -144,10 +178,14 @@ using (IServiceScope scope = app.Services.CreateScope())
 app.MapQueueEndpoints();
 app.MapDocumentEndpoints();
 
-// No CORS or auth policy applied to this hub yet — every client today is same-project/localhost. The
-// lightweight public-endpoint hardening (restricted CORS + API-key pattern) is added separately; a browser
-// client on a different origin (the future Angular containers) won't be able to connect until that lands.
-app.MapHub<QueueHub>("/hubs/queue");
+// The hub gets the same KnownFrontends CORS policy as the REST endpoints: every frontend (all three Angular apps
+// and the Blazor app) depends on it for live updates, and a cross-origin SignalR client's negotiate request is a
+// CORS request — without this the browser would block the connection before it starts. No auth policy on the hub
+// itself: it exposes no client-callable mutation method (all writes go through the REST endpoints, which are
+// gated), and it only ever pushes already-public queue state, so there's nothing here that the staff/token gates
+// on the REST side would be protecting.
+app.MapHub<QueueHub>("/hubs/queue")
+  .RequireCors(CorsPolicies.KnownFrontends);
 
 app.MapDefaultEndpoints();
 

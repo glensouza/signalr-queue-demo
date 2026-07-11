@@ -6,22 +6,55 @@ using SignalRQueueDemo.Contracts;
 namespace SignalRQueueDemo.ApiService.Endpoints;
 
 /// <summary>
-/// Maps the queue endpoints: check-in, call-next, complete, current-state read, and the reconnect catch-up
-/// read. Pulled out of Program.cs into its own extension method purely for readability — there's no DI or
-/// lifetime reason it couldn't live inline.
+/// Maps the queue endpoints: the check-in token issuer, check-in, call-next, complete, current-state read, and
+/// the reconnect catch-up read. Pulled out of Program.cs into its own extension method purely for readability —
+/// there's no DI or lifetime reason it couldn't live inline.
 /// </summary>
 public static class QueueEndpoints
 {
   /// <summary>
-  /// Registers /checkin, /queue/call-next, /queue/{id}/complete, GET /queue, and GET /queue/since/{seq}.
+  /// Registers GET /checkin/token, POST /checkin, POST /queue/call-next, POST /queue/{id}/complete,
+  /// GET /queue, and GET /queue/since/{seq}.
+  ///
+  /// <para>
+  /// Every route gets the <see cref="CorsPolicies.KnownFrontends"/> policy — the staff routes need it just as
+  /// much as the public ones, since the (cross-origin) staff Angular app is a known frontend too; CORS is not
+  /// the trust boundary here (that's <see cref="StaffAuthFilter"/> on call-next/complete), it only keeps the
+  /// legitimate frontends from being refused by the browser before that check runs. The check-in token filter
+  /// (<see cref="CheckInTokenFilter"/>) gates the check-in POST; the token issuer and the two read endpoints
+  /// stay ungated by it, per the anti-forgery-style pattern's usual scope of "protect writes, not reads".
+  /// </para>
   /// </summary>
   public static void MapQueueEndpoints(this WebApplication app)
   {
-    app.MapPost("/checkin", HandleCheckInAsync);
-    app.MapPost("/queue/call-next", HandleCallNextAsync);
-    app.MapPost("/queue/{id}/complete", HandleCompleteAsync);
-    app.MapGet("/queue", HandleGetQueueAsync);
-    app.MapGet("/queue/since/{sequenceNumber:long}", HandleGetSinceAsync);
+    app.MapGet("/checkin/token", HandleIssueCheckInToken)
+      .RequireCors(CorsPolicies.KnownFrontends);
+    app.MapPost("/checkin", HandleCheckInAsync)
+      .RequireCors(CorsPolicies.KnownFrontends)
+      .AddEndpointFilter<CheckInTokenFilter>();
+    app.MapPost("/queue/call-next", HandleCallNextAsync)
+      .RequireCors(CorsPolicies.KnownFrontends)
+      .AddEndpointFilter<StaffAuthFilter>();
+    app.MapPost("/queue/{id}/complete", HandleCompleteAsync)
+      .RequireCors(CorsPolicies.KnownFrontends)
+      .AddEndpointFilter<StaffAuthFilter>();
+    app.MapGet("/queue", HandleGetQueueAsync)
+      .RequireCors(CorsPolicies.KnownFrontends);
+    app.MapGet("/queue/since/{sequenceNumber:long}", HandleGetSinceAsync)
+      .RequireCors(CorsPolicies.KnownFrontends);
+  }
+
+  /// <summary>
+  /// Issues a fresh short-lived token a kiosk client must echo back on <c>POST /checkin</c> — see
+  /// <see cref="CheckInTokenService"/> for what this does and doesn't protect against. Synchronous (no
+  /// <c>Async</c> suffix): issuing a token is pure computation, no I/O.
+  /// </summary>
+  private static IResult HandleIssueCheckInToken(CheckInTokenService tokenService, HttpResponse response)
+  {
+    // no-store so a security token is never retained by the browser's bfcache or a shared proxy and later
+    // replayed or leaked — a token-issuing GET must not be cacheable.
+    response.Headers.CacheControl = "no-store";
+    return Results.Ok(new CheckInTokenResponse { Token = tokenService.Issue() });
   }
 
   private static async Task<IResult> HandleCheckInAsync(

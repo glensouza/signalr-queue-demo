@@ -1,15 +1,31 @@
 @ApiService_HostAddress = http://localhost:5410
 
+### The static key StaffAuthFilter checks on every staff endpoint below. The value here matches the
+### PLACEHOLDER-... default in appsettings.json — a real deployment overrides that setting via user-secrets or
+### an environment variable, and this variable would need to match whatever it's changed to.
+@staffKey = PLACEHOLDER-staff-key-never-a-real-secret-see-CLAUDE.md
+
 ### Current queue state + latest sequence number. Seeded with "Jane Test" (A-042) and "Sam Sample" (A-043)
-### on first run against a fresh database.
+### on first run against a fresh database. Public, hardened by CORS only (no write, no token needed).
 GET {{ApiService_HostAddress}}/queue
 Accept: application/json
 
 ###
 
-### Check in a new visitor. Server assigns the id, position, and sequence number.
+### Fetch a fresh check-in token (short-lived, HMAC-signed — see CheckInTokenService). Copy the "token" value
+### from the response into @checkInToken below before running POST /checkin; a stale or missing token gets
+### 401 ProblemDetails from CheckInTokenFilter.
+GET {{ApiService_HostAddress}}/checkin/token
+Accept: application/json
+
+###
+
+### Check in a new visitor. Server assigns the id, position, and sequence number. Requires a fresh token from
+### GET /checkin/token above, echoed on X-CheckIn-Token — omitting it, or sending an expired one, returns 401.
+@checkInToken = replace-with-a-token-from-get-checkin-token
 POST {{ApiService_HostAddress}}/checkin
 Content-Type: application/json
+X-CheckIn-Token: {{checkInToken}}
 
 {
   "displayName": "Sam Sample Two",
@@ -18,15 +34,19 @@ Content-Type: application/json
 
 ###
 
-### Call the oldest Waiting entry to Serving. Returns 409 Conflict if nobody is Waiting.
+### Call the oldest Waiting entry to Serving. Returns 409 Conflict if nobody is Waiting. Staff-only: requires
+### X-Staff-Key; omitting it or sending the wrong value returns 401 ProblemDetails from StaffAuthFilter.
 POST {{ApiService_HostAddress}}/queue/call-next
+X-Staff-Key: {{staffKey}}
 
 ###
 
 ### Complete a Serving entry (replace {{entryId}} with an id from GET /queue, e.g. the one call-next just
-### returned). Returns 404 if the id doesn't exist, 409 if the entry isn't currently Serving.
+### returned). Returns 404 if the id doesn't exist, 409 if the entry isn't currently Serving. Staff-only, same
+### X-Staff-Key requirement as call-next.
 @entryId = replace-with-an-entry-id-from-get-queue
 POST {{ApiService_HostAddress}}/queue/{{entryId}}/complete
+X-Staff-Key: {{staffKey}}
 
 ###
 
@@ -41,13 +61,16 @@ Accept: application/json
 
 ###
 
-### Upload a document against a checked-in entry (public, hardened by allowlist + size cap, not auth — see
-### docs/decisions.md). Replace {{entryId}} above with a real id from GET /queue or a check-in response.
+### Upload a document against a checked-in entry (public, hardened by allowlist + size cap + the same check-in
+### token as POST /checkin — see docs/decisions.md). Replace {{entryId}} above with a real id from GET /queue or
+### a check-in response, and {{checkInToken}} with a fresh one from GET /checkin/token (tokens are short-lived;
+### reuse the same one across nearby requests, but re-fetch if this 401s).
 ### Allowed content types: application/pdf, image/jpeg, image/png; 10 MB cap. Wrong type or oversized returns
 ### 400 with ProblemDetails; unknown entry id returns 404. The referenced file is committed sample data (a
 ### synthetic intake form, no real court data) under SampleDocuments/.
 POST {{ApiService_HostAddress}}/checkin/{{entryId}}/documents
 Content-Type: multipart/form-data; boundary=----DemoBoundary7MA4YWxkTrZu0gW
+X-CheckIn-Token: {{checkInToken}}
 
 ------DemoBoundary7MA4YWxkTrZu0gW
 Content-Disposition: form-data; name="file"; filename="sample-intake-form.pdf"
@@ -58,14 +81,16 @@ Content-Type: application/pdf
 
 ###
 
-### List documents uploaded for an entry (staff-only once mock staff auth lands; unauthenticated for now —
-### see the TODO comment on DocumentEndpoints.MapDocumentEndpoints). Returns 404 for an unknown entry id.
+### List documents uploaded for an entry. Staff-only, same X-Staff-Key requirement as call-next/complete.
+### Returns 404 for an unknown entry id.
 GET {{ApiService_HostAddress}}/queue/{{entryId}}/documents
 Accept: application/json
+X-Staff-Key: {{staffKey}}
 
 ###
 
-### Stream a single document's content back (replace {{docId}} with an id from the list response above; same
-### staff/unauthenticated-for-now note as above). Returns 404 for an unknown entry or document id.
+### Stream a single document's content back (replace {{docId}} with an id from the list response above).
+### Staff-only, same X-Staff-Key requirement. Returns 404 for an unknown entry or document id.
 @docId = replace-with-a-document-id-from-the-list-response
 GET {{ApiService_HostAddress}}/queue/{{entryId}}/documents/{{docId}}
+X-Staff-Key: {{staffKey}}

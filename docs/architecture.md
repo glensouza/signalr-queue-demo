@@ -53,8 +53,10 @@ self-encapsulated" in `docs/decisions.md` for the full reasoning.
 
 | Zone | Apps | Auth | Notes |
 |---|---|---|---|
-| Public | `public-checkin`, `queue-display`, Blazor public pages | None (court visitors) | Lightweight hardening only: restricted CORS + anti-forgery/API-key pattern. Documented honestly — it raises the bar, it is not real security. |
-| Internal | `internal-queue`, Blazor staff page | Mock auth (simple header/key) | Models the internal-vs-public boundary that production would enforce with Entra ID. |
+| Public | `public-checkin`, `queue-display`, Blazor public pages | None (court visitors) | Lightweight hardening only, implemented in `ApiService`: a short-lived HMAC token (`GET /checkin/token`) gates the two state-changing check-in POSTs — `POST /checkin` via `CheckInTokenFilter`, the document upload inline before it buffers the body. Documented honestly — it raises the bar, it is not real security; see `README.md`'s Security model section for exactly what it does and doesn't protect against. |
+| Internal | `internal-queue`, Blazor staff page | Mock auth (`X-Staff-Key` header, `StaffAuthFilter`) | Gates `POST /queue/call-next`, `POST /queue/{id}/complete`, and the two document-viewing endpoints. Models the internal-vs-public boundary that production would enforce with Entra ID — the filter, not just its key, is what production replaces. |
+
+Restricted CORS (`Cors:AllowedOrigins`, policy `KnownFrontends`) is applied across **both** zones — every browser-reachable surface: the public and staff REST endpoints and the SignalR hub. It is not itself the trust boundary (the auth rows above are); it just keeps the legitimate cross-origin frontends — public *and* staff Angular apps, which all reach the hub for live updates — from being refused by the browser before those checks run, while an unlisted origin still is. See `docs/decisions.md`, "CORS allowed origins are config".
 
 ## Reconnect / catch-up protocol
 
@@ -100,7 +102,7 @@ Table Storage has no multi-row transactions and no server-side autoincrement, so
 
 Uploaded documents go to Blob Storage (Azurite locally) via `DocumentBlobStore`, one container per queue entry (`docs-{entryId}`, created lazily on first upload), always under a randomized (`Guid`) blob name — never the client-supplied filename, which is a path-traversal/collision vector on a public endpoint. Metadata (display filename, content type, size, uploaded-at) is tracked separately through a new `IDocumentRepository`, backed by the same store as `IQueueRepository` for the active `Persistence:Provider` (SQLite: a `Documents` table sharing `QueueDbContext`'s connection; Table Storage: a `QueueDocuments` table partitioned by entry id) — so the staff console lists a visitor's documents with one local read, never a live Blob container enumeration. See `docs/decisions.md` for the container-per-entry, randomized-naming, and blob-before-metadata-write rationale, and for why the content-type allowlist checks the client's `Content-Type` header rather than sniffing file bytes.
 
-The two staff-facing document endpoints (`GET /queue/{id}/documents`, `GET /queue/{id}/documents/{docId}`) currently ship unauthenticated — the mock staff-auth `X-Staff-Key` filter gates them alongside call-next/complete; see the `TODO` comment on `DocumentEndpoints.MapDocumentEndpoints`.
+The two staff-facing document endpoints (`GET /queue/{id}/documents`, `GET /queue/{id}/documents/{docId}`) sit behind the mock staff-auth `X-Staff-Key` filter (`StaffAuthFilter`), alongside call-next/complete — see [Trust boundaries](#trust-boundaries) above and `README.md`'s Security model section.
 
 ## Azure SignalR stub (ADR-0001, Option C chosen)
 

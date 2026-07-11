@@ -36,8 +36,8 @@
         </mxCell>
 
         <!-- API -->
-        <mxCell id="api" value="SignalRQueueDemo.ApiService&#10;ASP.NET Core minimal API (.NET 10)&#10;&#10;POST /checkin · POST /queue/call-next&#10;POST /queue/{id}/complete · GET /queue&#10;GET /queue/since/{seq}  ← reconnect catch-up&#10;POST /checkin/{id}/documents  ← upload (public)&#10;GET /queue/{id}/documents(/{docId})  ← staff&#10;&#10;QueueHub (SignalR, self-hosted per ADR-0001)&#10;broadcasts QueueUpdated with monotonic seq #" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
-          <mxGeometry x="560" y="240" width="360" height="250" as="geometry" />
+        <mxCell id="api" value="SignalRQueueDemo.ApiService&#10;ASP.NET Core minimal API (.NET 10)&#10;&#10;GET /checkin/token  ← issues check-in token (public)&#10;POST /checkin · POST /queue/call-next&#10;POST /queue/{id}/complete · GET /queue&#10;GET /queue/since/{seq}  ← reconnect catch-up&#10;POST /checkin/{id}/documents  ← upload (public)&#10;GET /queue/{id}/documents(/{docId})  ← staff&#10;&#10;StaffAuthFilter (X-Staff-Key) · CheckInTokenFilter (HMAC)&#10;+ restricted CORS (KnownFrontends) on REST + hub&#10;&#10;QueueHub (SignalR, self-hosted per ADR-0001)&#10;broadcasts QueueUpdated with monotonic seq #" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="240" width="360" height="290" as="geometry" />
         </mxCell>
 
         <!-- Contracts -->

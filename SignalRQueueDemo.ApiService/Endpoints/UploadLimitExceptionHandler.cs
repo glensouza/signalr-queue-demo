@@ -6,16 +6,16 @@ namespace SignalRQueueDemo.ApiService.Endpoints;
 /// <summary>
 /// Turns the framework-level "request body too large" failures into a clean <c>413 Payload Too Large</c>
 /// <see cref="ProblemDetails"/> instead of the opaque 500 they otherwise produce. The upload endpoint's
-/// <c>WithFormOptions</c> body limit is a buffering backstop: a grossly oversized body is cut off by the form
-/// reader *before* the handler runs, so it can't be rejected by the handler's own tidy size check. When the
-/// multipart reader trips the limit it throws <see cref="InvalidDataException"/> ("Multipart body length limit N
-/// exceeded"), which minimal-API form binding then wraps in a <see cref="BadHttpRequestException"/> ("Failed to
-/// read parameter ... from the request body as form") — so this unwraps one level to recognize it. A
-/// server-level body-size limit instead throws a <see cref="BadHttpRequestException"/> already carrying a 413.
-/// Either way it would otherwise surface as a 500. Mapping it here keeps even the abuse path returning a
-/// sensible status. The endpoint's in-handler check still gives the more precise "exceeds the 10 MB upload
-/// limit" message for a file only modestly over the cap; this handles the far larger bodies that never reach
-/// the handler at all.
+/// <c>UploadFormOptions</c> body limit is a buffering backstop: a grossly oversized body is cut off by the form
+/// reader *before* the handler's own size check runs. The upload handler reads the multipart body by hand
+/// (<c>ReadFormAsync</c>), so the reader throws a bare <see cref="InvalidDataException"/> ("Multipart body length
+/// limit N exceeded") straight out of the handler. (Two other shapes are handled too, for robustness and for any
+/// endpoint that binds a form the framework's own way: that same exception wrapped by minimal-API form binding
+/// in a <see cref="BadHttpRequestException"/>, and a server-level body-size <see cref="BadHttpRequestException"/>
+/// already carrying a 413.) Any of them would otherwise surface as a 500. Mapping it here keeps even the abuse
+/// path returning a sensible status. The endpoint's in-handler check still gives the more precise "exceeds the
+/// 10 MB upload limit" message for a file only modestly over the cap; this handles the far larger bodies that
+/// trip the reader before that check.
 /// </summary>
 public sealed class UploadLimitExceptionHandler : IExceptionHandler
 {
