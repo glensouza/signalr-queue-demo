@@ -65,6 +65,26 @@ $excludeFiles = @(
 # In-file scrubs: exact literal text -> replacement. Empty replacement deletes
 # the text. A scrub that finds nothing emits a WARNING so drift is visible.
 # ---------------------------------------------------------------------------
+# Global token scrubs: literal text -> replacement, applied to EVERY copied text
+# file, not one named file. Use for identifiers that recur across the codebase --
+# e.g. source-comment references to the AI contributor standards file (CLAUDE.md),
+# which appear in many .cs and .md files. Naming each one as its own per-file
+# $scrub would be brittle (every reworded comment breaks an exact match) and would
+# silently leak the moment someone adds a new reference, which VERIFY then fails
+# on. A global token replacement covers them all, including files this script has
+# never seen. Applied after the per-file $scrubs (so their sentence-level deletes
+# win) and before VERIFY.
+$globalScrubs = @(
+    # "CLAUDE.md" contains "claude", so every code/doc comment that cites the
+    # standards file by name trips the VERIFY banned-term scan. CONTRIBUTING.md is
+    # the neutral, conventional stand-in and reads naturally in every surrounding
+    # phrasing ("per CONTRIBUTING.md", "CONTRIBUTING.md's C# style", "CONTRIBUTING.md
+    # § Workflow"). The file itself is excluded from the deliverable either way, so
+    # these were already dangling references to an unshipped doc -- this only
+    # changes the name they dangle to.
+    @{ Find = 'CLAUDE.md'; Replace = 'CONTRIBUTING.md' }
+)
+
 $scrubs = @(
     @{
         File    = 'README.md'
@@ -146,6 +166,25 @@ foreach ($scrub in $scrubs) {
     }
     else {
         Write-Warning "Scrub text NOT FOUND in $($scrub.File) - the source file changed. Update this script's scrub list."
+    }
+}
+
+# Global token scrubs across every copied text file (see $globalScrubs above).
+$globalScrubFiles = Get-ChildItem -Recurse -File $Destination |
+    Where-Object { $_.FullName -notmatch '\\\.git\\' -and $textExtensions -contains $_.Extension }
+foreach ($g in $globalScrubs) {
+    $matched = 0
+    foreach ($file in $globalScrubFiles) {
+        $content = Get-Content -Raw $file.FullName
+        if ($null -eq $content -or -not $content.Contains($g.Find)) { continue }
+        Set-Content -Path $file.FullName -Value $content.Replace($g.Find, $g.Replace) -NoNewline
+        $matched++
+    }
+    if ($matched -gt 0) {
+        Write-Host "Global-scrubbed '$($g.Find)' -> '$($g.Replace)' in $matched file(s)." -ForegroundColor Green
+    }
+    else {
+        Write-Warning "Global scrub token '$($g.Find)' not found in any file - it may be obsolete; review this script's global scrub list."
     }
 }
 
