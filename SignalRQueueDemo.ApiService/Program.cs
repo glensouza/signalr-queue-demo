@@ -122,14 +122,29 @@ builder.Services.AddSingleton<DocumentBlobStore>();
 // Self-hosted SignalR — the default topology per ADR-0001 Option C. No extra PackageReference needed:
 // Microsoft.NET.Sdk.Web already references the ASP.NET Core shared framework, which includes the SignalR
 // server. See SignalRQueueDemo.ApiService/Hubs/QueueHub.cs for the broadcast + reconnect catch-up protocol.
-// This is the default topology, not the only one: ADR-0001 documents a UseAzureSignalR feature-flag escape
-// hatch to the Azure SignalR emulator for higher concurrency, added separately.
+// This runs unconditionally — regardless of UseAzureSignalR below — because it's the only topology this POC
+// actually wires the kiosk/staff/display frontends to; see AzureSignalRDefaultModeStub for why the ADR-0001
+// production scale-up path can't run against the local emulator either.
 builder.Services.AddSignalR();
 
 // The one place queue mutations broadcast QueueUpdated. Singleton because it holds only the singleton
 // IHubContext + a logger; see QueueBroadcaster for why broadcasting goes through it (single choke point +
 // a failed push can't fail an already-committed write).
 builder.Services.AddSingleton<QueueBroadcaster>();
+
+// DECISION: UseAzureSignalR (default false) is the ADR-0001 Option C escape hatch. It does NOT swap
+// out the self-hosted SignalR wired above — see AzureSignalRDefaultModeStub for why the real production path
+// (AddAzureSignalR(connectionString), default/server mode) can't run against the local emulator, which only
+// supports serverless mode. Instead, turning the flag on registers AzureSignalRServerlessDemoService, an
+// illustrative side-channel (a BackgroundService, so it runs off the startup path and never delays readiness)
+// that proves the emulator's serverless round-trip on its own — see that class's remarks. AppHost.cs reads the
+// same-named flag independently to decide whether the emulator resource (and the "signalr" connection string
+// this service depends on) exists at all; keep both defaults in sync.
+bool useAzureSignalR = builder.Configuration.GetValue<bool>("UseAzureSignalR");
+if (useAzureSignalR)
+{
+    builder.Services.AddHostedService<AzureSignalRServerlessDemoService>();
+}
 
 WebApplication app = builder.Build();
 

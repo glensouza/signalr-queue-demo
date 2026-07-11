@@ -52,8 +52,8 @@
         <mxCell id="azurite" value="Azurite emulator&#10;Table Storage: IQueueRepository alt impl&#10;Blob Storage: uploaded documents" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
           <mxGeometry x="1040" y="280" width="220" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="sigemu" value="Azure SignalR Emulator&#10;used ONLY when UseAzureSignalR=true&#10;(stub — never a real Azure resource)" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=2;" vertex="1" parent="1">
-          <mxGeometry x="1040" y="450" width="220" height="100" as="geometry" />
+        <mxCell id="sigemu" value="Azure SignalR Emulator (serverless mode)&#10;container only exists when UseAzureSignalR=true&#10;never a real Azure resource — see AzureSignalRDefaultModeStub&#10;for the (never-invoked) production/default-mode path" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="450" width="220" height="110" as="geometry" />
         </mxCell>
 
         <!-- Edges -->
@@ -78,7 +78,7 @@
         <mxCell id="e7" value="Table + Blob SDKs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="api" target="azurite">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e8" value="feature-flag stub" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="api" target="sigemu">
+        <mxCell id="e8" value="AzureSignalRServerlessDemoService:&#10;ServiceHubContext push + a client&#10;connected directly to the emulator" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="api" target="sigemu">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#d79b00;" edge="1" parent="1" source="contracts" target="api">

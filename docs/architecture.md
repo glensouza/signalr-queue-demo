@@ -26,7 +26,7 @@ flowchart TB
 
         subgraph emulators["Local emulators (stand-ins for Azure)"]
             azurite["Azurite<br/>Blob + Table Storage"]
-            sigemu["Azure SignalR Emulator<br/>(only when UseAzureSignalR=true)"]
+            sigemu["Azure SignalR Emulator<br/>(serverless mode; container only exists<br/>when UseAzureSignalR=true)"]
         end
 
         sqlite[("SQLite<br/>(EF Core)")]
@@ -38,7 +38,7 @@ flowchart TB
     blazor -. "SignalR only: QueueUpdated (live push)<br/>+ NotifyMutation (after a local write)" .-> api
     api -- "IQueueRepository (SQLite impl)" --> sqlite
     api -- "IQueueRepository (Table impl)<br/>documents (Blob)" --> azurite
-    api -. "feature flag stub" .-> sigemu
+    api -. "AzureSignalRServerlessDemoService:<br/>ServiceHubContext push + a client<br/>connected directly to the emulator" .-> sigemu
 ```
 
 **Note on Blazor's client shape:** `SignalRQueueDemo.Web` is self-encapsulated — check-in/call-next/complete call
@@ -104,9 +104,14 @@ Uploaded documents go to Blob Storage (Azurite locally) via `DocumentBlobStore`,
 
 The two staff-facing document endpoints (`GET /queue/{id}/documents`, `GET /queue/{id}/documents/{docId}`) sit behind the mock staff-auth `X-Staff-Key` filter (`StaffAuthFilter`), alongside call-next/complete — see [Trust boundaries](#trust-boundaries) above and `README.md`'s Security model section.
 
-## Azure SignalR stub (ADR-0001, Option C chosen)
+## Azure SignalR escape hatch (ADR-0001, Option C chosen)
 
-Self-hosted SignalR is the accepted decision. The `UseAzureSignalR` config flag (default `false`) shows the one-line escape hatch (`AddAzureSignalR(...)`) and, when enabled, targets the local Azure SignalR **Emulator** — never a real Azure resource. Known limitation: the emulator only supports serverless mode, so the stub is primarily illustrative; this is documented at the call site.
+Self-hosted SignalR is the accepted decision, and it's what every frontend (Angular and Blazor) talks to regardless of the `UseAzureSignalR` flag — the flag never reroutes real app traffic. It exists to show the vendor team the two paths ADR-0001 names, both against the local Azure SignalR **Emulator**, never a real Azure resource:
+
+- **Default/server mode** (`AzureSignalRDefaultModeStub.Apply`) — the actual one-line production change (`AddAzureSignalR(connectionString)`). Never invoked: the emulator only supports serverless mode, so there's no local target this call could point at without a real Azure SignalR resource.
+- **Serverless mode** (`AzureSignalRServerlessDemoService`) — the path the emulator *can* run. A hosted service, registered only when the flag is on, that builds a `ServiceHubContext` (`Microsoft.Azure.SignalR.Management`), connects a client straight to the emulator (serverless clients bypass ASP.NET Core hubs entirely), and pushes one synthetic `QueueUpdated` through it to prove the round-trip. Runs once at startup, logs success/timeout, and never throws past itself — a broken emulator container can't take down the API.
+
+`AppHost.cs` reads its own copy of `UseAzureSignalR` to decide whether the `signalr` emulator resource (`AddAzureSignalR("signalr", AzureSignalRServiceMode.Serverless).RunAsEmulator()`) exists at all — unlike the storage emulator, which always runs, this one only starts a container when someone has opted in. **Verified quirk:** Azure SignalR hub names reject hyphens (`negotiate` accepts one, the send REST call 400s) — `AzureSignalRServerlessDemoService.DemoHubName` is camelCase for exactly this reason. See `README.md`'s "Scaling past self-hosted" section for how to flip the flag and what to expect in the logs.
 
 ## Maintaining the diagrams
 

@@ -26,6 +26,15 @@
     <!-- Azure Blob Storage client integration (issue #5's document-content backend): registers a
          BlobServiceClient wired to the Azurite emulator via Aspire service discovery — see Program.cs. -->
     <PackageReference Include="Aspire.Azure.Storage.Blobs" Version="13.4.6" />
+    <!-- Serverless-mode SDK for the UseAzureSignalR feature flag: ServiceManagerBuilder ->
+         ServiceHubContext is how a server pushes through Azure SignalR (or its local emulator, which only
+         supports this mode) without an ASP.NET Core hub receiving the connection — see
+         AzureSignalRServerlessDemoService. -->
+    <PackageReference Include="Microsoft.Azure.SignalR.Management" Version="1.33.1" />
+    <!-- SignalR .NET client, used only by AzureSignalRServerlessDemoService to prove the emulator round-trip by
+         connecting a client to it directly (serverless-mode clients connect to the SignalR service, not to an
+         ASP.NET Core hub) — not used anywhere in the app's real traffic path. -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.9" />
   </ItemGroup>
 
 </Project>

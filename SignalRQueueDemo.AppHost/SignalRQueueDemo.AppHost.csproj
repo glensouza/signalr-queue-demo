@@ -17,6 +17,9 @@
     <!-- Models the Azurite emulator resource: Table Storage for issue #4's IQueueRepository backend, and Blob
          Storage for issue #5's uploaded documents (same package, one resource, two sub-resources). -->
     <PackageReference Include="Aspire.Hosting.Azure.Storage" Version="13.4.6" />
+    <!-- Models the Azure SignalR Emulator resource for the UseAzureSignalR feature flag — started
+         only when the flag is on, unlike the storage emulator above which always runs. See Program.cs. -->
+    <PackageReference Include="Aspire.Hosting.Azure.SignalR" Version="13.4.6" />
   </ItemGroup>
 
 </Project>
