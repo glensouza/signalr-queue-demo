@@ -13,4 +13,9 @@
     <ProjectReference Include="..\SignalRQueueDemo.Web\SignalRQueueDemo.Web.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Models the Azurite Table Storage emulator resource for issue #4's IQueueRepository backend. -->
+    <PackageReference Include="Aspire.Hosting.Azure.Storage" Version="13.4.6" />
+  </ItemGroup>
+
 </Project>

@@ -1,9 +1,11 @@
+using Azure.Data.Tables;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SignalRQueueDemo.ApiService.Endpoints;
 using SignalRQueueDemo.ApiService.Hubs;
 using SignalRQueueDemo.ApiService.Persistence;
 using SignalRQueueDemo.ApiService.Persistence.Sqlite;
+using SignalRQueueDemo.ApiService.Persistence.TableStorage;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -15,29 +17,58 @@ builder.Services.AddProblemDetails();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-// SQLite is the default (and only, until issue #4) IQueueRepository backend. The connection string lives in
-// config (appsettings.json), not because it's a secret, but so switching the .db path/name never needs a
-// code change. "Data Source=App_Data/..." is relative to the process working directory, which `aspire run`
-// and `dotnet run` both set to the project directory — see .gitignore for why the App_Data folder itself
-// isn't committed.
-string connectionString = builder.Configuration.GetConnectionString("QueueDb")
-    ?? throw new InvalidOperationException("Missing required connection string 'QueueDb'.");
+// DECISION: the IQueueRepository backend is chosen by config, not compiled in — this is the config switch
+// issue #4 asks for. "Sqlite" (default) needs no extra infrastructure; "TableStorage" talks to the Azurite
+// emulator that SignalRQueueDemo.AppHost always starts (see AppHost.cs), so flipping this one setting is the
+// entire migration with zero other code changes, demonstrating the storage swap ADR-0001 flagged as worth
+// evaluating for future low-complexity projects.
+string persistenceProvider = builder.Configuration["Persistence:Provider"] ?? "Sqlite";
 
-// SQLite won't create a missing subdirectory for its own file, so App_Data needs to exist before the first
-// connection opens. Parsed via SqliteConnectionStringBuilder rather than string-splitting "Data Source="
-// so this keeps working if the connection string ever grows extra options (e.g. Cache=Shared).
-string? dataDirectory = Path.GetDirectoryName(new SqliteConnectionStringBuilder(connectionString).DataSource);
-if (!string.IsNullOrEmpty(dataDirectory))
+switch (persistenceProvider)
 {
-    Directory.CreateDirectory(dataDirectory);
-}
+    case "Sqlite":
+        // The connection string lives in config (appsettings.json), not because it's a secret, but so
+        // switching the .db path/name never needs a code change. "Data Source=App_Data/..." is relative to
+        // the process working directory, which `aspire run` and `dotnet run` both set to the project
+        // directory — see .gitignore for why the App_Data folder itself isn't committed.
+        string connectionString = builder.Configuration.GetConnectionString("QueueDb")
+            ?? throw new InvalidOperationException("Missing required connection string 'QueueDb'.");
 
-// The interceptor sets busy_timeout + WAL on every connection so concurrent writes (a kiosk checking in while
-// staff calls the next entry) wait for each other instead of failing with "database is locked". It's stateless,
-// so a single shared instance is safe across all scoped contexts.
-builder.Services.AddDbContext<QueueDbContext>(options =>
-    options.UseSqlite(connectionString).AddInterceptors(new QueueConnectionInterceptor()));
-builder.Services.AddScoped<IQueueRepository, SqliteQueueRepository>();
+        // SQLite won't create a missing subdirectory for its own file, so App_Data needs to exist before the
+        // first connection opens. Parsed via SqliteConnectionStringBuilder rather than string-splitting
+        // "Data Source=" so this keeps working if the connection string ever grows extra options (e.g.
+        // Cache=Shared).
+        string? dataDirectory = Path.GetDirectoryName(new SqliteConnectionStringBuilder(connectionString).DataSource);
+        if (!string.IsNullOrEmpty(dataDirectory))
+        {
+            Directory.CreateDirectory(dataDirectory);
+        }
+
+        // The interceptor sets busy_timeout + WAL on every connection so concurrent writes (a kiosk checking
+        // in while staff calls the next entry) wait for each other instead of failing with "database is
+        // locked". It's stateless, so a single shared instance is safe across all scoped contexts.
+        builder.Services.AddDbContext<QueueDbContext>(options =>
+            options.UseSqlite(connectionString).AddInterceptors(new QueueConnectionInterceptor()));
+        builder.Services.AddScoped<IQueueRepository, SqliteQueueRepository>();
+        break;
+
+    case "TableStorage":
+        // "tables" matches the resource name AddTables("tables") is given in AppHost.cs — Aspire service
+        // discovery injects the emulator's connection string under that name, so no connection string ever
+        // appears in source or config here (court constraint: no secrets in source control).
+        builder.AddAzureTableServiceClient(connectionName: "tables");
+
+        // Singleton (unlike SqliteQueueRepository's Scoped registration): TableServiceClient is a thread-safe,
+        // connection-pooling SDK client meant to be shared, and this repository holds no other per-request
+        // state, so there's no reason to pay DI's per-scope allocation cost SqliteQueueRepository pays for its
+        // scoped DbContext.
+        builder.Services.AddSingleton<IQueueRepository, TableStorageQueueRepository>();
+        break;
+
+    default:
+        throw new InvalidOperationException(
+            $"Unknown Persistence:Provider '{persistenceProvider}'. Expected 'Sqlite' or 'TableStorage'.");
+}
 
 // Self-hosted SignalR — the default topology per ADR-0001 Option C. No extra PackageReference needed:
 // Microsoft.NET.Sdk.Web already references the ASP.NET Core shared framework, which includes the SignalR
@@ -60,14 +91,28 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-// EnsureCreated, not migrations: this is a POC scaffold with no schema history to preserve, so a single
-// call that stamps the current model is simpler than a migrations project + design-time factory. Tradeoff
-// documented on QueueDbContext: it won't pick up later model changes against an already-created .db file.
+// Schema/table creation + seeding, branched the same way DI registration was above. Both branches leave the
+// store ready for the same manual `.http` test script in README.md regardless of which provider is active.
 using (IServiceScope scope = app.Services.CreateScope())
 {
-    QueueDbContext dbContext = scope.ServiceProvider.GetRequiredService<QueueDbContext>();
-    await dbContext.Database.EnsureCreatedAsync();
-    await QueueSeedData.SeedIfEmptyAsync(dbContext);
+    if (persistenceProvider == "TableStorage")
+    {
+        // Azurite starts with zero tables — unlike SQLite's single .db file, there's no schema to stamp, but
+        // the three named tables (entries, change events, sequence counter) still need to exist before the
+        // first request. See TableStorageQueueSeedData for why seeding also primes the sequence counter.
+        TableServiceClient tableServiceClient = scope.ServiceProvider.GetRequiredService<TableServiceClient>();
+        await TableStorageQueueSeedData.EnsureTablesAndSeedAsync(tableServiceClient);
+    }
+    else
+    {
+        // EnsureCreated, not migrations: this is a POC scaffold with no schema history to preserve, so a
+        // single call that stamps the current model is simpler than a migrations project + design-time
+        // factory. Tradeoff documented on QueueDbContext: it won't pick up later model changes against an
+        // already-created .db file.
+        QueueDbContext dbContext = scope.ServiceProvider.GetRequiredService<QueueDbContext>();
+        await dbContext.Database.EnsureCreatedAsync();
+        await QueueSeedData.SeedIfEmptyAsync(dbContext);
+    }
 }
 
 app.MapQueueEndpoints();

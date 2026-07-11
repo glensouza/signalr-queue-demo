@@ -59,11 +59,11 @@ Endpoints (all shapes come from `SignalRQueueDemo.Contracts`):
 
 > **Route correction from the original brief:** the brief specified `POST /queue/{id}/call-next`, but call-next selects the next entry itself — no id belongs in that route. Corrected to `POST /queue/call-next`; `{id}` remains on `complete`, which does act on a specific entry. See [`docs/decisions.md`](docs/decisions.md) for the full rationale, plus why the SQLite repository uses `EnsureCreated` instead of migrations.
 >
-> **Status:** `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, and `GET /queue/since/{sequenceNumber}` are implemented (issues #2–#3) against `IQueueRepository` → `SqliteQueueRepository` (EF Core, `App_Data/queue.db`, git-ignored), plus the self-hosted `QueueHub` (mapped at `/hubs/queue`) broadcasting `QueueUpdated`. The document endpoints and Table Storage backend land in issues #4–5.
+> **Status:** `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, and `GET /queue/since/{sequenceNumber}` are implemented (issues #2–#3) against `IQueueRepository`, plus the self-hosted `QueueHub` (mapped at `/hubs/queue`) broadcasting `QueueUpdated`. Two `IQueueRepository` backends are live (issue #4): `SqliteQueueRepository` (EF Core, `App_Data/queue.db`, git-ignored, default) and `TableStorageQueueRepository` (Azure Table Storage against the Azurite emulator) — see [Flipping the persistence provider](#flipping-the-persistence-provider) below. The document upload endpoints land in issue #5.
 
 - **`QueueHub`** (`SignalRQueueDemo.ApiService/Hubs/QueueHub.cs`) broadcasts `QueueUpdated` on every state change and sends `CurrentSequence` on connect so a client always has a baseline. Self-hosted in-process (ADR-0001 Option C), with a feature-flag path to Azure SignalR (below).
 - **Reconnect resiliency:** every state change increments a **monotonic sequence number** persisted in a change-event log. Reconnecting clients call `GET /queue/since/{seq}` to replay what they missed — push-only delivery is never relied on. See [`docs/architecture.md`](docs/architecture.md#reconnect--catch-up-protocol) for the full sequence diagram and the push-ordering caveat.
-- **Persistence:** behind an `IQueueRepository` interface with two signature-compatible implementations — **SQLite via EF Core** (default) and **Azure Table Storage** (against the Azurite emulator) — selected by config.
+- **Persistence:** behind an `IQueueRepository` interface with two signature-compatible implementations — **SQLite via EF Core** (default) and **Azure Table Storage** (against the Azurite emulator) — selected by config. `SignalRQueueDemo.AppHost` always starts the Azurite Table resource, so flipping the config value at [Flipping the persistence provider](#flipping-the-persistence-provider) is the entire migration, no other code or infrastructure change.
 - **Auth model:** no auth on the public check-in path, but lightweight hardening (restricted CORS + short-lived anti-forgery token) to demonstrate the public-internet posture honestly. Staff endpoints use simple mock auth (`X-Staff-Key` header) to model the internal-vs-public trust boundary — no real Entra ID in the POC.
 
 ### 2. `SignalRQueueDemo.Contracts` — shared DTOs/records
@@ -118,12 +118,12 @@ Work is driven by [GitHub issues #1–#14](https://github.com/glensouza/signalr-
 
 ## Current repo status
 
-.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository` (issue #2). The Blazor `Web` project and the Angular workspace are still template/not-yet-built — they land at issues #13 and #8–11 respectively.
+.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository`, now with two swappable backends (issues #2, #4). The Blazor `Web` project and the Angular workspace are still template/not-yet-built — they land at issues #13 and #8–11 respectively.
 
 | Project / path | Purpose |
 |---|---|
-| `SignalRQueueDemo.AppHost` | Aspire orchestrator — brings up every resource with one command. |
-| `SignalRQueueDemo.ApiService` | Minimal API: `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, `GET /queue/since/{sequenceNumber}` (issues #2–#3), backed by `SqliteQueueRepository`, plus the self-hosted `QueueHub` (`/hubs/queue`) broadcasting `QueueUpdated`. |
+| `SignalRQueueDemo.AppHost` | Aspire orchestrator — brings up every resource with one command, including the Azurite Table Storage emulator. |
+| `SignalRQueueDemo.ApiService` | Minimal API: `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, `GET /queue/since/{sequenceNumber}` (issues #2–#3), backed by `IQueueRepository` → `SqliteQueueRepository` or `TableStorageQueueRepository` (issue #4, config-selected), plus the self-hosted `QueueHub` (`/hubs/queue`) broadcasting `QueueUpdated`. |
 | `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums (QueueEntry, QueueStatus, QueueUpdated, QueueStateResponse, etc.) — single source of truth for all wire shapes. |
 | `SignalRQueueDemo.Web` | Blazor Server frontend (template default today; becomes the three Blazor experiences at issue #13). |
 | `SignalRQueueDemo.ServiceDefaults` | Shared Aspire defaults — OpenTelemetry, health checks, service discovery. |
@@ -140,6 +140,12 @@ aspire run
 ```
 
 Opens the Aspire dashboard with the API service and Blazor Web app (Blazor is still template defaults; real-time queue features land per the implementation plan).
+
+### Flipping the persistence provider
+
+`Persistence:Provider` in `SignalRQueueDemo.ApiService/appsettings.json` (or an environment/user-secrets override) selects the `IQueueRepository` backend at startup — `Sqlite` (default) or `TableStorage`. `aspire run` always starts the Azurite Table Storage emulator regardless of which value is set, so switching providers needs no other change: stop the app, edit the setting, run `aspire run` again. The manual test script below (and the reconnect/catch-up walkthrough after it) exercises the exact same requests and produces the same responses against either backend — that equivalence is issue #4's acceptance criterion. Seed data is identical either way ("Jane Test"/A-042, "Sam Sample"/A-043).
+
+Both backends give the same concurrency guarantees — distinct check-in positions, no double-serve on call-next, and a reconnect baseline that never runs ahead of the changes it returns — verified with concurrent request bursts against a live `aspire run` stack on each provider. See `docs/decisions.md` for how the Table Storage side achieves this without SQL transactions: a gap-free change-event log (the row insert *is* the sequence-number allocation) plus an ETag-serialized position counter, both reconciled to real state at startup.
 
 ### Exercising the queue API manually
 

@@ -20,6 +20,9 @@
     <!-- Direct pin to override the vulnerable SQLitePCLRaw.bundle_e_sqlite3 2.1.11 (bundled SQLite < 3.50.2)
          pulled in transitively by Microsoft.EntityFrameworkCore.Sqlite (GHSA-2m69-gcr7-jv3q / CVE-2025-6965). -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+    <!-- Azure Table Storage client integration (issue #4's second IQueueRepository backend): registers a
+         TableServiceClient wired to the Azurite emulator via Aspire service discovery — see Program.cs. -->
+    <PackageReference Include="Aspire.Azure.Data.Tables" Version="13.4.6" />
   </ItemGroup>
 
 </Project>
