@@ -23,6 +23,9 @@
     <!-- Azure Table Storage client integration (issue #4's second IQueueRepository backend): registers a
          TableServiceClient wired to the Azurite emulator via Aspire service discovery — see Program.cs. -->
     <PackageReference Include="Aspire.Azure.Data.Tables" Version="13.4.6" />
+    <!-- Azure Blob Storage client integration (issue #5's document-content backend): registers a
+         BlobServiceClient wired to the Azurite emulator via Aspire service discovery — see Program.cs. -->
+    <PackageReference Include="Aspire.Azure.Storage.Blobs" Version="13.4.6" />
   </ItemGroup>
 
 </Project>

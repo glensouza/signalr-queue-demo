@@ -93,11 +93,6 @@ $scrubs = @(
     }
     @{
         File    = 'README.md'
-        Find    = "Work is driven by [GitHub issues #1`u{2013}#14](https://github.com/glensouza/signalr-queue-demo/issues), ordered by dependency, each carrying its own acceptance criteria, the docs it must update, and a recommended Claude model (``model:haiku`` / ``model:sonnet`` / ``model:opus`` labels) chosen to optimize token cost. Rough shape:"
-        Replace = "Work is executed as an ordered, dependency-aware backlog of 14 work items, each with its own acceptance criteria and the documentation it must update. Rough shape:"
-    }
-    @{
-        File    = 'README.md'
         Find    = "| ``CLAUDE.md`` | Coding + documentation standards for all contributors. |`n"
         Replace = ''
     }

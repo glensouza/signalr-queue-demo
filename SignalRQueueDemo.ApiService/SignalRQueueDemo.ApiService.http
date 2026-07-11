@@ -30,7 +30,7 @@ POST {{ApiService_HostAddress}}/queue/{{entryId}}/complete
 
 ###
 
-### Reconnect catch-up (issue #3): everything that changed after {{sinceSeq}}. Replace {{sinceSeq}} with a
+### Reconnect catch-up: everything that changed after {{sinceSeq}}. Replace {{sinceSeq}} with a
 ### sequence number noted from an earlier response (e.g. the one GET /queue returned before you called-next
 ### or completed anything above). isSnapshot=false + changes=[...] is the common case; isSnapshot=true +
 ### snapshot={...} means the requested number was unrecognized or too far behind — see
@@ -38,3 +38,34 @@ POST {{ApiService_HostAddress}}/queue/{{entryId}}/complete
 @sinceSeq = 0
 GET {{ApiService_HostAddress}}/queue/since/{{sinceSeq}}
 Accept: application/json
+
+###
+
+### Upload a document against a checked-in entry (public, hardened by allowlist + size cap, not auth — see
+### docs/decisions.md). Replace {{entryId}} above with a real id from GET /queue or a check-in response.
+### Allowed content types: application/pdf, image/jpeg, image/png; 10 MB cap. Wrong type or oversized returns
+### 400 with ProblemDetails; unknown entry id returns 404. The referenced file is committed sample data (a
+### synthetic intake form, no real court data) under SampleDocuments/.
+POST {{ApiService_HostAddress}}/checkin/{{entryId}}/documents
+Content-Type: multipart/form-data; boundary=----DemoBoundary7MA4YWxkTrZu0gW
+
+------DemoBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="sample-intake-form.pdf"
+Content-Type: application/pdf
+
+< ./SampleDocuments/sample-intake-form.pdf
+------DemoBoundary7MA4YWxkTrZu0gW--
+
+###
+
+### List documents uploaded for an entry (staff-only once mock staff auth lands; unauthenticated for now —
+### see the TODO comment on DocumentEndpoints.MapDocumentEndpoints). Returns 404 for an unknown entry id.
+GET {{ApiService_HostAddress}}/queue/{{entryId}}/documents
+Accept: application/json
+
+###
+
+### Stream a single document's content back (replace {{docId}} with an id from the list response above; same
+### staff/unauthenticated-for-now note as above). Returns 404 for an unknown entry or document id.
+@docId = replace-with-a-document-id-from-the-list-response
+GET {{ApiService_HostAddress}}/queue/{{entryId}}/documents/{{docId}}

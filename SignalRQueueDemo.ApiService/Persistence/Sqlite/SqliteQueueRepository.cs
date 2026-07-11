@@ -27,8 +27,8 @@ public sealed class SqliteQueueRepository(QueueDbContext dbContext) : IQueueRepo
   private readonly QueueDbContext dbContext = dbContext;
 
   /// <summary>
-  /// Placeholder for "who called this entry". Real staff identity arrives with mock auth in issue #6;
-  /// until then every call-next is attributed to this fixed value so the field isn't left silently null.
+  /// Placeholder for "who called this entry". Real staff identity arrives with mock auth (a static X-Staff-Key
+  /// header); until then every call-next is attributed to this fixed value so the field isn't left silently null.
   /// </summary>
   private const string MockStaffIdentity = "front-desk-mock";
 

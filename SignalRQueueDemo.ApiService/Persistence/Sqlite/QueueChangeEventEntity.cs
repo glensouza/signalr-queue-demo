@@ -4,7 +4,7 @@ namespace SignalRQueueDemo.ApiService.Persistence.Sqlite;
 
 /// <summary>
 /// A denormalized point-in-time copy of a <see cref="QueueEntry"/>, written alongside every state change.
-/// This is the event log the reconnect/catch-up protocol (issue #3) will read from via GET /queue/since/{seq}.
+/// This is the event log the reconnect/catch-up protocol reads from via GET /queue/since/{seq}.
 /// It's a full copy rather than a foreign key to <see cref="QueueEntryEntity"/> on purpose: the entry it
 /// describes keeps changing (Waiting -> Serving -> Completed), but a historical event must keep showing the
 /// entry exactly as it was at that sequence number, not whatever it has since become.

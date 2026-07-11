@@ -5,8 +5,8 @@ namespace SignalRQueueDemo.ApiService.Persistence;
 /// <summary>
 /// Storage abstraction for the walk-in queue. Deliberately speaks only in <c>SignalRQueueDemo.Contracts</c>
 /// types — no EF Core or Azure SDK types appear on this interface — so <see cref="Sqlite.SqliteQueueRepository"/>
-/// (this issue) and the Azure Table Storage implementation (issue #4) can be swapped via config without either
-/// one leaking its persistence technology into the API layer or into the other implementation.
+/// and the Azure Table Storage implementation can be swapped via config without either one leaking its
+/// persistence technology into the API layer or into the other implementation.
 /// </summary>
 public interface IQueueRepository
 {

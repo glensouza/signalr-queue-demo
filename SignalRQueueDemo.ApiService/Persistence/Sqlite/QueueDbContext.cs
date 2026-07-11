@@ -19,6 +19,9 @@ public sealed class QueueDbContext(DbContextOptions<QueueDbContext> options) : D
   /// <summary>Append-only change log — one immutable row per state change, keyed by the monotonic sequence number.</summary>
   public DbSet<QueueChangeEventEntity> ChangeEvents => this.Set<QueueChangeEventEntity>();
 
+  /// <summary>Uploaded-document metadata — see <see cref="DocumentEntity"/> for why this is a separate table from <see cref="Entries"/>.</summary>
+  public DbSet<DocumentEntity> Documents => this.Set<DocumentEntity>();
+
   protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
   {
     // Applied as conventions (every property of these types, across both tables) rather than per-column so a
@@ -48,6 +51,15 @@ public sealed class QueueDbContext(DbContextOptions<QueueDbContext> options) : D
       entity.ToTable("QueueChangeEvents");
       entity.HasKey(e => e.SequenceNumber);
       entity.Property(e => e.SequenceNumber).ValueGeneratedOnAdd();
+    });
+
+    modelBuilder.Entity<DocumentEntity>(entity =>
+    {
+      entity.ToTable("Documents");
+      entity.HasKey(e => e.Id);
+      // Every read (list, single-document lookup) filters by EntryId first, so it's indexed rather than relying
+      // on a full-table scan — cheap here at demo scale, but it's the right habit for a reference implementation.
+      entity.HasIndex(e => e.EntryId);
     });
   }
 }

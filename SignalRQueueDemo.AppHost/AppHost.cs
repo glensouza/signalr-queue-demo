@@ -1,16 +1,25 @@
-var builder = DistributedApplication.CreateBuilder(args);
+using Aspire.Hosting.Azure;
 
-// Azurite-backed Table Storage resource for issue #4's second IQueueRepository implementation. Modeled
-// unconditionally (not behind a flag) so `aspire run` always starts the emulator; the API only talks to it
-// when Persistence:Provider=TableStorage (see ApiService/Program.cs) — same "always available, config picks
-// which one's used" shape as the two IQueueRepository implementations themselves.
-var tables = builder.AddAzureStorage("storage")
-    .RunAsEmulator()
-    .AddTables("tables");
+// Explicit types (not var) per the repo's C# style standard — the Aspire resource-builder generics are verbose
+// but the style rule applies here the same as anywhere else.
+IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(args);
 
-var apiService = builder.AddProject<Projects.SignalRQueueDemo_ApiService>("apiservice")
+// Azurite-backed Table Storage resource for the second IQueueRepository implementation, plus Blob Storage for
+// uploaded documents — one "storage" emulator resource, two sub-resources hung off it. Both are modeled
+// unconditionally (not behind a flag) so `aspire run` always starts them; Table Storage is only *used* when
+// Persistence:Provider=TableStorage, and Blob Storage only when a document is actually uploaded (see
+// ApiService/Program.cs) — same "always available, config/activity picks what's used" shape as the two
+// IQueueRepository implementations themselves.
+IResourceBuilder<AzureStorageResource> storage = builder.AddAzureStorage("storage")
+    .RunAsEmulator();
+IResourceBuilder<AzureTableStorageResource> tables = storage.AddTables("tables");
+IResourceBuilder<AzureBlobStorageResource> blobs = storage.AddBlobs("blobs");
+
+IResourceBuilder<ProjectResource> apiService = builder.AddProject<Projects.SignalRQueueDemo_ApiService>("apiservice")
     .WithReference(tables)
     .WaitFor(tables)
+    .WithReference(blobs)
+    .WaitFor(blobs)
     .WithHttpHealthCheck("/health");
 
 builder.AddProject<Projects.SignalRQueueDemo_Web>("webfrontend")

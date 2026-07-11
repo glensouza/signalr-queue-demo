@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SignalRQueueDemo.ApiService.Endpoints;
 using SignalRQueueDemo.ApiService.Hubs;
 using SignalRQueueDemo.ApiService.Persistence;
+using SignalRQueueDemo.ApiService.Persistence.Blob;
 using SignalRQueueDemo.ApiService.Persistence.Sqlite;
 using SignalRQueueDemo.ApiService.Persistence.TableStorage;
 
@@ -14,14 +15,18 @@ builder.AddServiceDefaults();
 
 builder.Services.AddProblemDetails();
 
+// Maps the framework's "request body too large" failures (multipart body-length limit on the document-upload
+// endpoint, or a server body-size limit) to a clean 413 ProblemDetails instead of an opaque 500 — see
+// UploadLimitExceptionHandler. Runs ahead of the default handler registered by UseExceptionHandler below.
+builder.Services.AddExceptionHandler<SignalRQueueDemo.ApiService.Endpoints.UploadLimitExceptionHandler>();
+
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-// DECISION: the IQueueRepository backend is chosen by config, not compiled in — this is the config switch
-// issue #4 asks for. "Sqlite" (default) needs no extra infrastructure; "TableStorage" talks to the Azurite
-// emulator that SignalRQueueDemo.AppHost always starts (see AppHost.cs), so flipping this one setting is the
-// entire migration with zero other code changes, demonstrating the storage swap ADR-0001 flagged as worth
-// evaluating for future low-complexity projects.
+// DECISION: the IQueueRepository backend is chosen by config, not compiled in. "Sqlite" (default) needs no
+// extra infrastructure; "TableStorage" talks to the Azurite emulator that SignalRQueueDemo.AppHost always
+// starts (see AppHost.cs), so flipping this one setting is the entire migration with zero other code changes,
+// demonstrating the storage swap ADR-0001 flagged as worth evaluating for future low-complexity projects.
 string persistenceProvider = builder.Configuration["Persistence:Provider"] ?? "Sqlite";
 
 switch (persistenceProvider)
@@ -50,6 +55,11 @@ switch (persistenceProvider)
         builder.Services.AddDbContext<QueueDbContext>(options =>
             options.UseSqlite(connectionString).AddInterceptors(new QueueConnectionInterceptor()));
         builder.Services.AddScoped<IQueueRepository, SqliteQueueRepository>();
+
+        // Document metadata rides the same DbContext/connection as the queue entries it describes — "alongside
+        // the queue entry" in the literal single-database sense, not just conceptually. See IDocumentRepository's
+        // remarks for why this is a separate interface from IQueueRepository despite sharing a backend per provider.
+        builder.Services.AddScoped<IDocumentRepository, SqliteDocumentRepository>();
         break;
 
     case "TableStorage":
@@ -63,6 +73,7 @@ switch (persistenceProvider)
         // state, so there's no reason to pay DI's per-scope allocation cost SqliteQueueRepository pays for its
         // scoped DbContext.
         builder.Services.AddSingleton<IQueueRepository, TableStorageQueueRepository>();
+        builder.Services.AddSingleton<IDocumentRepository, TableStorageDocumentRepository>();
         break;
 
     default:
@@ -70,11 +81,20 @@ switch (persistenceProvider)
             $"Unknown Persistence:Provider '{persistenceProvider}'. Expected 'Sqlite' or 'TableStorage'.");
 }
 
+// Blob Storage (the document-content backend) is NOT part of the Persistence:Provider switch above — unlike
+// IQueueRepository/IDocumentRepository, it isn't swappable by config; Azurite's Blob emulator is the only
+// backend this POC targets, matching its scope as a stand-in for the court's Document Management System API.
+// "blobs" matches AddBlobs("blobs") in AppHost.cs; Aspire service discovery injects the emulator's connection
+// string under that name, so (same court constraint as "tables" above) no connection string ever appears in
+// source or config here.
+builder.AddAzureBlobServiceClient(connectionName: "blobs");
+builder.Services.AddSingleton<DocumentBlobStore>();
+
 // Self-hosted SignalR — the default topology per ADR-0001 Option C. No extra PackageReference needed:
 // Microsoft.NET.Sdk.Web already references the ASP.NET Core shared framework, which includes the SignalR
 // server. See SignalRQueueDemo.ApiService/Hubs/QueueHub.cs for the broadcast + reconnect catch-up protocol.
 // This is the default topology, not the only one: ADR-0001 documents a UseAzureSignalR feature-flag escape
-// hatch to the Azure SignalR emulator for higher concurrency; that flag and its Aspire wiring land in issue #7.
+// hatch to the Azure SignalR emulator for higher concurrency, added separately.
 builder.Services.AddSignalR();
 
 // The one place queue mutations broadcast QueueUpdated. Singleton because it holds only the singleton
@@ -102,6 +122,12 @@ using (IServiceScope scope = app.Services.CreateScope())
         // first request. See TableStorageQueueSeedData for why seeding also primes the sequence counter.
         TableServiceClient tableServiceClient = scope.ServiceProvider.GetRequiredService<TableServiceClient>();
         await TableStorageQueueSeedData.EnsureTablesAndSeedAsync(tableServiceClient);
+
+        // Documents table has no seed data (no synthetic pre-uploaded documents) — it just needs to exist
+        // before the first upload, same "Azurite starts with zero tables" reasoning as the three tables
+        // TableStorageQueueSeedData creates above.
+        TableClient documentsTable = tableServiceClient.GetTableClient(TableStorageDocumentRepository.DocumentsTableName);
+        await documentsTable.CreateIfNotExistsAsync();
     }
     else
     {
@@ -116,9 +142,10 @@ using (IServiceScope scope = app.Services.CreateScope())
 }
 
 app.MapQueueEndpoints();
+app.MapDocumentEndpoints();
 
 // No CORS or auth policy applied to this hub yet — every client today is same-project/localhost. The
-// lightweight public-endpoint hardening (restricted CORS + API-key pattern) is issue #6's job; a browser
+// lightweight public-endpoint hardening (restricted CORS + API-key pattern) is added separately; a browser
 // client on a different origin (the future Angular containers) won't be able to connect until that lands.
 app.MapHub<QueueHub>("/hubs/queue");
 

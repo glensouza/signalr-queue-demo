@@ -41,8 +41,8 @@ public interface IQueueHubClient
 /// <summary>
 /// Self-hosted SignalR hub — the default topology per ADR-0001 Option C, not the only one: a
 /// <c>UseAzureSignalR</c> feature-flag escape hatch to the Azure SignalR emulator is documented in
-/// <c>docs/architecture.md</c> and lands in issue #7. This hub is the reference pattern behind the
-/// reconnect/catch-up protocol either way — copy its shape, not just its behavior, for any future hub.
+/// <c>docs/architecture.md</c>. This hub is the reference pattern behind the reconnect/catch-up protocol either
+/// way — copy its shape, not just its behavior, for any future hub.
 ///
 /// <para>
 /// <b>Why the hub never decides what changed:</b> <see cref="QueueUpdated"/> broadcasts originate at the REST

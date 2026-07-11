@@ -55,11 +55,12 @@ Endpoints (all shapes come from `SignalRQueueDemo.Contracts`):
 | `POST /queue/{id}/complete` | mock staff auth | Moves a `Serving` entry to `Completed`. |
 | `GET /queue` | public (hardened) | Current queue state + latest sequence number. |
 | `GET /queue/since/{sequenceNumber}` | public (hardened) | Reconnect catch-up: every change after that sequence number. |
-| `GET /queue/{id}/documents` | mock staff auth | Lists/streams uploaded documents for an entry. |
+| `GET /queue/{id}/documents` | mock staff auth | Lists documents uploaded against an entry (metadata only). |
+| `GET /queue/{id}/documents/{docId}` | mock staff auth | Streams a single uploaded document's content back. |
 
 > **Route correction from the original brief:** the brief specified `POST /queue/{id}/call-next`, but call-next selects the next entry itself — no id belongs in that route. Corrected to `POST /queue/call-next`; `{id}` remains on `complete`, which does act on a specific entry. See [`docs/decisions.md`](docs/decisions.md) for the full rationale, plus why the SQLite repository uses `EnsureCreated` instead of migrations.
 >
-> **Status:** `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, and `GET /queue/since/{sequenceNumber}` are implemented (issues #2–#3) against `IQueueRepository`, plus the self-hosted `QueueHub` (mapped at `/hubs/queue`) broadcasting `QueueUpdated`. Two `IQueueRepository` backends are live (issue #4): `SqliteQueueRepository` (EF Core, `App_Data/queue.db`, git-ignored, default) and `TableStorageQueueRepository` (Azure Table Storage against the Azurite emulator) — see [Flipping the persistence provider](#flipping-the-persistence-provider) below. The document upload endpoints land in issue #5.
+> **Status:** `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, and `GET /queue/since/{sequenceNumber}` are implemented against `IQueueRepository`, plus the self-hosted `QueueHub` (mapped at `/hubs/queue`) broadcasting `QueueUpdated`. Two `IQueueRepository` backends are live: `SqliteQueueRepository` (EF Core, `App_Data/queue.db`, git-ignored, default) and `TableStorageQueueRepository` (Azure Table Storage against the Azurite emulator) — see [Flipping the persistence provider](#flipping-the-persistence-provider) below. Document upload/viewing is implemented against a new `IDocumentRepository` (metadata, backed the same way as `IQueueRepository`) plus `DocumentBlobStore` (content, always Azurite Blob Storage) — see [Uploading and viewing documents](#uploading-and-viewing-documents) below. The two document-viewing endpoints are unauthenticated until the mock staff-auth filter is added.
 
 - **`QueueHub`** (`SignalRQueueDemo.ApiService/Hubs/QueueHub.cs`) broadcasts `QueueUpdated` on every state change and sends `CurrentSequence` on connect so a client always has a baseline. Self-hosted in-process (ADR-0001 Option C), with a feature-flag path to Azure SignalR (below).
 - **Reconnect resiliency:** every state change increments a **monotonic sequence number** persisted in a change-event log. Reconnecting clients call `GET /queue/since/{seq}` to replay what they missed — push-only delivery is never relied on. See [`docs/architecture.md`](docs/architecture.md#reconnect--catch-up-protocol) for the full sequence diagram and the push-ordering caveat.
@@ -112,20 +113,20 @@ The `UseAzureSignalR` config flag (default `false`) marks the escape hatch. Two 
 
 ## Implementation plan
 
-Work is driven by [GitHub issues #1–#14](https://github.com/glensouza/signalr-queue-demo/issues), ordered by dependency, each carrying its own acceptance criteria, the docs it must update, and a recommended Claude model (`model:haiku` / `model:sonnet` / `model:opus` labels) chosen to optimize token cost. Rough shape:
+Work is executed as an ordered, dependency-aware backlog of 14 work items, each with its own acceptance criteria and the documentation it must update. Rough shape:
 
 1. Contracts → 2. API + SQLite → 3. Hub + reconnect catch-up → 4. Table Storage + Azurite → 5. Blob upload → 6. Auth/hardening → 7. Azure SignalR flag + emulator → 8. Angular workspace + shared lib → 9–11. The three Angular apps → 12. Dockerfiles + AppHost wiring → 13. Blazor experiences → 14. E2E verification + Angular-vs-Blazor comparison.
 
 ## Current repo status
 
-.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository`, now with two swappable backends (issues #2, #4). The Blazor `Web` project and the Angular workspace are still template/not-yet-built — they land at issues #13 and #8–11 respectively.
+.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository`, now with two swappable backends, plus document upload/viewing behind `IDocumentRepository` and `DocumentBlobStore`. The Blazor `Web` project and the Angular workspace are still template/not-yet-built — they are built in later work items.
 
 | Project / path | Purpose |
 |---|---|
-| `SignalRQueueDemo.AppHost` | Aspire orchestrator — brings up every resource with one command, including the Azurite Table Storage emulator. |
-| `SignalRQueueDemo.ApiService` | Minimal API: `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, `GET /queue/since/{sequenceNumber}` (issues #2–#3), backed by `IQueueRepository` → `SqliteQueueRepository` or `TableStorageQueueRepository` (issue #4, config-selected), plus the self-hosted `QueueHub` (`/hubs/queue`) broadcasting `QueueUpdated`. |
-| `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums (QueueEntry, QueueStatus, QueueUpdated, QueueStateResponse, etc.) — single source of truth for all wire shapes. |
-| `SignalRQueueDemo.Web` | Blazor Server frontend (template default today; becomes the three Blazor experiences at issue #13). |
+| `SignalRQueueDemo.AppHost` | Aspire orchestrator — brings up every resource with one command, including the Azurite Table Storage and Blob Storage emulator resources. |
+| `SignalRQueueDemo.ApiService` | Minimal API: `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, `GET /queue/since/{sequenceNumber}`, backed by `IQueueRepository` → `SqliteQueueRepository` or `TableStorageQueueRepository` (config-selected); plus `POST /checkin/{id}/documents`, `GET /queue/{id}/documents`, `GET /queue/{id}/documents/{docId}`, backed by `IDocumentRepository` (same config-selected backend) and `DocumentBlobStore` (Azurite Blob Storage, not config-selected); plus the self-hosted `QueueHub` (`/hubs/queue`) broadcasting `QueueUpdated`. |
+| `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums (QueueEntry, QueueStatus, QueueUpdated, QueueStateResponse, DocumentMetadata, etc.) — single source of truth for all wire shapes. |
+| `SignalRQueueDemo.Web` | Blazor Server frontend (template default today; becomes the three Blazor experiences in later work). |
 | `SignalRQueueDemo.ServiceDefaults` | Shared Aspire defaults — OpenTelemetry, health checks, service discovery. |
 | `CLAUDE.md` | Coding + documentation standards for all contributors. |
 | `docs/architecture.md` | Living architecture doc (Mermaid diagrams, trust boundaries, reconnect protocol). |
@@ -143,7 +144,7 @@ Opens the Aspire dashboard with the API service and Blazor Web app (Blazor is st
 
 ### Flipping the persistence provider
 
-`Persistence:Provider` in `SignalRQueueDemo.ApiService/appsettings.json` (or an environment/user-secrets override) selects the `IQueueRepository` backend at startup — `Sqlite` (default) or `TableStorage`. `aspire run` always starts the Azurite Table Storage emulator regardless of which value is set, so switching providers needs no other change: stop the app, edit the setting, run `aspire run` again. The manual test script below (and the reconnect/catch-up walkthrough after it) exercises the exact same requests and produces the same responses against either backend — that equivalence is issue #4's acceptance criterion. Seed data is identical either way ("Jane Test"/A-042, "Sam Sample"/A-043).
+`Persistence:Provider` in `SignalRQueueDemo.ApiService/appsettings.json` (or an environment/user-secrets override) selects the `IQueueRepository` backend at startup — `Sqlite` (default) or `TableStorage`. `aspire run` always starts the Azurite Table Storage emulator regardless of which value is set, so switching providers needs no other change: stop the app, edit the setting, run `aspire run` again. The manual test script below (and the reconnect/catch-up walkthrough after it) exercises the exact same requests and produces the same responses against either backend — that equivalence is a core acceptance criterion for the Table Storage backend. Seed data is identical either way ("Jane Test"/A-042, "Sam Sample"/A-043).
 
 Both backends give the same concurrency guarantees — distinct check-in positions, no double-serve on call-next, and a reconnect baseline that never runs ahead of the changes it returns — verified with concurrent request bursts against a live `aspire run` stack on each provider. See `docs/decisions.md` for how the Table Storage side achieves this without SQL transactions: a gap-free change-event log (the row insert *is* the sequence-number allocation) plus an ETag-serialized position counter, both reconciled to real state at startup.
 
@@ -158,22 +159,34 @@ With the API running (`aspire run`, or `dotnet run --project SignalRQueueDemo.Ap
 
 This is the full check-in → call-next → complete lifecycle.
 
-### Manually verifying the reconnect/catch-up protocol (issue #3)
+### Uploading and viewing documents
+
+Documents upload to Blob Storage (Azurite locally) against a specific queue entry, and staff list/stream them back. Continuing the `.http` script above:
+
+1. `POST /checkin/{entryId}/documents` — multipart upload with `file` as the form field name. Content type is checked against an allowlist (`application/pdf`, `image/jpeg`, `image/png`) and size against a 10 MB cap, both enforced server-side; an empty file, a wrong type, or a file modestly over the cap returns `400` with `ProblemDetails`; a grossly oversized body is cut off by a form-buffering backstop and returns `413`; an entry already holding the maximum of 10 documents returns `409`; and an unknown `entryId` returns `404`. The `.http` file references a committed sample PDF (`SampleDocuments/sample-intake-form.pdf` — synthetic test data only, no real court data) so the request works with no external file. The uploaded blob's storage name is always a server-generated GUID, never the client's filename — see `docs/decisions.md` for why.
+2. `GET /queue/{entryId}/documents` — lists the entry's documents (display filename, content type, size, uploaded-at) from metadata tracked alongside the queue entry, without touching Blob Storage. Returns `404` for an unknown entry id.
+3. `GET /queue/{entryId}/documents/{docId}` — streams the document's actual content back with its original content type and filename. Returns `404` for an unknown entry or document id.
+
+**Limits, by design:** 10 MB per file (plus a form-buffering backstop so a public endpoint can't be made to spool an unbounded body), three allowed content types, at most 10 documents per queue entry, one Blob container per queue entry (`docs-{entryId}`), and container/blob names that are always server-generated — none of these are configurable via `appsettings.json`, matching the constants-not-config pattern already used for `MaxCatchUpEvents`/`MaxOptimisticConcurrencyAttempts` elsewhere in this codebase. See `docs/decisions.md` for why the size and per-entry limits are enforced the way they are.
+
+**Auth status:** both `GET` endpoints above are unauthenticated in this change — the mock staff-auth `X-Staff-Key` filter is added separately and gates them (alongside call-next/complete). See the `TODO` comment on `DocumentEndpoints.MapDocumentEndpoints`.
+
+### Manually verifying the reconnect/catch-up protocol
 
 The `.http` file alone can't hold a live SignalR connection open, so this needs a small standalone client — either a
-throwaway `dotnet run` console app using `Microsoft.AspNetCore.SignalR.Client` (`HubConnectionBuilder().WithUrl("http://localhost:5410/hubs/queue").Build()`), or two browser tabs once a frontend exists (issues #8–13). Steps:
+throwaway `dotnet run` console app using `Microsoft.AspNetCore.SignalR.Client` (`HubConnectionBuilder().WithUrl("http://localhost:5410/hubs/queue").Build()`), or two browser tabs once a frontend exists. Steps:
 
 1. Connect the client to `/hubs/queue`. Confirm it immediately receives `CurrentSequence(N)` — this is the "you're caught up as of right now" baseline sent from `QueueHub.OnConnectedAsync`.
 2. From the `.http` file, run `POST /checkin`. Confirm the connected client receives a `QueueUpdated` push with `SequenceNumber = N + 1`.
 3. Disconnect the client (kill the console app, or close the tab) — simulating a kiosk losing wifi or staff stepping away. Note the last sequence number it saw (`N + 1`).
 4. With the client still disconnected, run `POST /queue/call-next` then `POST /queue/{id}/complete` from the `.http` file — two more state changes the disconnected client will miss entirely.
 5. Reconnect the client. It receives a fresh `CurrentSequence` (now `N + 3`), proving live push alone would have skipped the two changes made while it was offline.
-6. Call `GET /queue/since/{N + 1}` (edit `@sinceSeq` in the `.http` file). Confirm the response has `isSnapshot: false` and `changes` contains **exactly** the two missed events (call-next then complete, in that order) — this is the acceptance criterion for issue #3.
+6. Call `GET /queue/since/{N + 1}` (edit `@sinceSeq` in the `.http` file). Confirm the response has `isSnapshot: false` and `changes` contains **exactly** the two missed events (call-next then complete, in that order) — this is the acceptance criterion for the reconnect/catch-up protocol.
 7. Optional — exercise the snapshot fallback: call `GET /queue/since/999999` (an unrecognized/future sequence number). Confirm the response has `isSnapshot: true` with a full `snapshot` instead of `changes`.
 
 ## Angular vs. Blazor comparison
 
-Filled in at issue #14 from actual observations, not boilerplate: dev experience, container image size and startup time, what service discovery looked like from each side, and the plumbing delta for the reconnect logic. This section is meant to help the team pick a direction.
+Filled in from actual observations, not boilerplate: dev experience, container image size and startup time, what service discovery looked like from each side, and the plumbing delta for the reconnect logic. This section is meant to help the team pick a direction.
 
 ## Open items (from the 2026-07-09 design review)
 

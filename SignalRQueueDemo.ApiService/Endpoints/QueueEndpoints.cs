@@ -6,9 +6,9 @@ using SignalRQueueDemo.Contracts;
 namespace SignalRQueueDemo.ApiService.Endpoints;
 
 /// <summary>
-/// Maps the queue endpoints: check-in, call-next, complete, current-state read (issue #2), and the reconnect
-/// catch-up read (issue #3). Pulled out of Program.cs into its own extension method purely for readability —
-/// there's no DI or lifetime reason it couldn't live inline.
+/// Maps the queue endpoints: check-in, call-next, complete, current-state read, and the reconnect catch-up
+/// read. Pulled out of Program.cs into its own extension method purely for readability — there's no DI or
+/// lifetime reason it couldn't live inline.
 /// </summary>
 public static class QueueEndpoints
 {

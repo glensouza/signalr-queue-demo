@@ -11,7 +11,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddOutputCache();
 
 // Blazor talks to the queue via shared services and a direct SignalR HubConnection
-// (it's already .NET — no REST client needed). Wired up in GitHub issue #13.
+// (it's already .NET — no REST client needed). Wired up when the Blazor experiences land.
 
 WebApplication app = builder.Build();
 
