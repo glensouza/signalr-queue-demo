@@ -24,14 +24,16 @@
                 }
               </div>
               <div class="entry-actions">
-                <button
-                  class="secondary-button"
-                  type="button"
-                  (click)="selectEntry(entry.id)"
-                  [disabled]="actioning()"
-                >
-                  View documents
-                </button>
+                @if (entry.documentCount > 0) {
+                  <button
+                    class="secondary-button"
+                    type="button"
+                    (click)="selectEntry(entry.id)"
+                    [disabled]="actioning()"
+                  >
+                    View documents ({{ entry.documentCount }})
+                  </button>
+                }
                 <button
                   class="primary-button"
                   type="button"
@@ -52,6 +54,16 @@
       <div class="waiting-summary">
         {{ totalWaiting() }} {{ totalWaiting() === 1 ? 'person' : 'people' }} waiting
       </div>
+      <!-- Call Next sits directly under the waiting count, not in a page footer, so staff can call the next
+           person without scrolling past a long waiting list to find the button. -->
+      <button
+        class="primary-button large call-next-button"
+        type="button"
+        (click)="callNext()"
+        [disabled]="actioning() || totalWaiting() === 0"
+      >
+        {{ actioning() ? 'Calling…' : 'Call Next' }}
+      </button>
       @if (waitingEntries().length === 0) {
         <p class="empty-state">No one waiting</p>
       } @else {
@@ -63,30 +75,21 @@
                 <span class="ticket">{{ entry.ticketNumber }}</span>
                 <span class="name">{{ entry.displayName }}</span>
               </div>
-              <button
-                class="secondary-button"
-                type="button"
-                (click)="selectEntry(entry.id)"
-                [disabled]="actioning()"
-              >
-                View documents
-              </button>
+              @if (entry.documentCount > 0) {
+                <button
+                  class="secondary-button"
+                  type="button"
+                  (click)="selectEntry(entry.id)"
+                  [disabled]="actioning()"
+                >
+                  View documents ({{ entry.documentCount }})
+                </button>
+              }
             </li>
           }
         </ul>
       }
     </div>
-  </div>
-
-  <div class="call-next-footer">
-    <button
-      class="primary-button large"
-      type="button"
-      (click)="callNext()"
-      [disabled]="actioning() || totalWaiting() === 0"
-    >
-      {{ actioning() ? 'Calling…' : 'Call Next' }}
-    </button>
   </div>
 
   @if (selectedEntryId(); as entryId) {

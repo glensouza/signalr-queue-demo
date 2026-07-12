@@ -12,8 +12,14 @@ IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(ar
 // Persistence:Provider=TableStorage, and Blob Storage only when a document is actually uploaded (see
 // ApiService/Program.cs) — same "always available, config/activity picks what's used" shape as the two
 // IQueueRepository implementations themselves.
+// WithDataVolume persists Azurite's blob/table data in a named Docker volume across `aspire run` restarts, so
+// blob *content* has the same lifetime as the SQLite metadata that describes it. Without it the emulator started
+// empty every run while the metadata (SQLite file on disk) survived — leaving orphaned document rows that pointed
+// at blobs no longer there, so viewing a document uploaded in an earlier run failed with "content missing". Note
+// this only aligns the two going forward; documents are also deleted outright when their entry is completed (see
+// the complete endpoint), so content lives exactly as long as the visitor is in the queue.
 IResourceBuilder<AzureStorageResource> storage = builder.AddAzureStorage("storage")
-    .RunAsEmulator();
+    .RunAsEmulator(emulator => emulator.WithDataVolume());
 IResourceBuilder<AzureTableStorageResource> tables = storage.AddTables("tables");
 IResourceBuilder<AzureBlobStorageResource> blobs = storage.AddBlobs("blobs");
 
@@ -98,6 +104,11 @@ IResourceBuilder<ContainerResource> queueDisplay = builder
     .WithHttpEndpoint(targetPort: 80, name: "http")
     .WithExternalHttpEndpoints()
     .WithEnvironment("API_BASE_URL", apiHttpEndpoint)
+    // Only queue-display gets the public-checkin URL: it renders it as a "check in from your phone" QR code + link
+    // (see CheckInQr / docker/write-runtime-config.sh). Same LocalhostNetwork reasoning as apiHttpEndpoint — the
+    // value must be a host-reachable URL, not a container-network address. publicCheckin is declared above, so its
+    // endpoint is referenceable here; this is a reference only (no WaitFor), so it introduces no startup ordering.
+    .WithEnvironment("PUBLIC_CHECKIN_URL", publicCheckin.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork))
     .WaitFor(apiService);
 
 // CORS coordination is deliberately NOT done here by injecting the Angular containers' origins into apiService.

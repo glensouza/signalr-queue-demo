@@ -1,7 +1,21 @@
 <main class="kiosk">
-  @if (checkInResult(); as result) {
-    <app-position-view [checkIn]="result" (finished)="onFinished()" />
-  } @else {
+  @if (showForm()) {
     <app-check-in-form (checkedIn)="onCheckedIn($event)" />
+    @if (checkIns().length > 0) {
+      <!-- Only shown when adding-another on top of an existing list: a way back that doesn't check anyone in. -->
+      <button class="secondary-button" type="button" (click)="cancelAdding()">
+        Back to my {{ checkIns().length === 1 ? 'check-in' : 'check-ins' }}
+      </button>
+    }
+  } @else {
+    <div class="tracked-list">
+      @for (result of checkIns(); track result.entryId) {
+        <app-position-view [checkIn]="result" (finished)="onRemove(result.entryId)" />
+      }
+    </div>
+    <!-- Adds another person while keeping everyone above on screen — the fix for "checking someone else in loses my spot". -->
+    <button class="primary-button" type="button" (click)="checkAnother()">
+      Check someone else in
+    </button>
   }
 </main>

@@ -19,10 +19,12 @@ import { DocumentUpload } from '../document-upload/document-upload';
 const AUTO_RESET_SECONDS = 10;
 
 /**
- * The live "you are #N in line" screen shown after a successful check-in. This is the payoff for the whole
- * reconnect/catch-up machinery in the shared {@link QueueHubService}: it binds straight to that service's
- * signals, so the position re-computes itself on every live push, on catch-up after a dropped connection, and on
- * each polling tick — the component contains no socket logic of its own, which is exactly the reuse the shared
+ * The live "you are #N in line" card for one checked-in person. The device shows one of these per person being
+ * tracked (see the app shell) — checking someone else in adds another card rather than replacing this one, so a
+ * visitor never loses sight of their own place to check in a family member. This is the payoff for the whole
+ * reconnect/catch-up machinery in the shared {@link QueueHubService}: it binds straight to that service's signals,
+ * so each card's position re-computes on every live push, on catch-up after a dropped connection, and on each
+ * polling tick — the component contains no socket logic of its own, which is exactly the reuse the shared
  * QueueHubService was built to enable, and that the sibling staff/display apps lean on the same way.
  *
  * <p>The position is derived from the authoritative queue snapshot, not from the one-shot {@link CheckInResponse}
@@ -41,7 +43,7 @@ export class PositionView implements OnDestroy {
   /** The result of this visitor's check-in — supplies the entry id to track and the seed position. */
   readonly checkIn = input.required<CheckInResponse>();
 
-  /** Emitted when the kiosk should return to the check-in form: either the auto-reset elapsed or the visitor tapped the button. */
+  /** Emitted when this person should stop being tracked on the device — either they reached Completed and the auto-reset elapsed, or the visitor tapped "Stop tracking". The shell removes just this entry from its tracked list; other people being tracked on the same device are unaffected. */
   readonly finished = output<void>();
 
   /** Surfaced so the template can show an honest "reconnecting…" note when the socket has dropped to polling. */
@@ -110,7 +112,7 @@ export class PositionView implements OnDestroy {
     this.clearAutoReset();
   }
 
-  /** Manual escape hatch: the visitor (or the next person at a shared kiosk) taps to go back to the form now. */
+  /** Manual "stop tracking this person" — clears any running auto-reset and asks the shell to drop just this card. */
   protected startOver(): void {
     this.clearAutoReset();
     this.finished.emit();

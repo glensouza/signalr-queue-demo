@@ -1,5 +1,6 @@
 import { Component, computed, inject } from '@angular/core';
 import { QueueHubService, QueueStatus } from 'shared';
+import { toPublicName } from '../public-name';
 
 /**
  * Displays the entries still waiting in line — those with `status === QueueStatus.Waiting` from the hub's live
@@ -7,9 +8,10 @@ import { QueueHubService, QueueStatus } from 'shared';
  * never mutable fields (this workspace is zoneless — no zone.js — so {@link computed} drives the view instead of
  * imperative property updates).
  *
- * <p><strong>Court privacy: ticket number only.</strong> This board displays only the {@link ticketNumber} field,
- * never {@link displayName} — court constraint mandates that no names appear on a public waiting-room display. Any
- * attempt to render {@link displayName} would be an oversight, not a feature.</p>
+ * <p><strong>Court privacy: ticket number + partial name.</strong> This board shows the ticket number and the
+ * visitor's name masked to first-name-plus-last-initial via {@link toPublicName} (e.g. "Jane T.") — enough for a
+ * waiting visitor to spot their own place, without publishing full surnames to the whole room. Render {@link
+ * publicName}, not the raw {@link displayName}, on this public surface.</p>
  *
  * <p><strong>Why sort by parsed timestamp, not lexical string order:</strong> {@link checkedInAt} is an ISO 8601
  * string from the wire (a JSON DateTimeOffset); a catch-up-derived snapshot doesn't guarantee server order, so the
@@ -27,6 +29,9 @@ export class WaitingList {
 
   /** Re-exported for template comparisons. */
   protected readonly QueueStatus = QueueStatus;
+
+  /** The public-board name masker (first name + last initial) — bound in the template instead of the raw displayName. */
+  protected readonly publicName = toPublicName;
 
   /**
    * All entries with status `Waiting` from the live queue snapshot, sorted by check-in time ascending (oldest

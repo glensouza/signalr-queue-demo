@@ -83,4 +83,17 @@ public sealed class TableStorageDocumentRepository : IDocumentRepository
       return null;
     }
   }
+
+  public async Task DeleteDocumentsAsync(string entryId, CancellationToken ct = default)
+  {
+    // All of an entry's document rows share one partition (PartitionKey == entryId), so this deletes them in one
+    // pass over that partition. RowKey is all that's needed to delete, so the query selects nothing else. A partition
+    // with no rows (the entry never had a document) simply iterates zero times — the idempotent no-op the interface
+    // promises.
+    await foreach (DocumentTableEntity document in this.documentsTable.QueryAsync<DocumentTableEntity>(
+      d => d.PartitionKey == entryId, select: ["RowKey"], cancellationToken: ct))
+    {
+      await this.documentsTable.DeleteEntityAsync(entryId, document.RowKey, cancellationToken: ct);
+    }
+  }
 }

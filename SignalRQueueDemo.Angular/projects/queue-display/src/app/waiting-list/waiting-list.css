@@ -51,3 +51,8 @@
   color: #e0e0e0;
   letter-spacing: 0.05em;
 }
+
+.entry-name {
+  font-size: 1.15rem;
+  color: #b0b0b0;
+}

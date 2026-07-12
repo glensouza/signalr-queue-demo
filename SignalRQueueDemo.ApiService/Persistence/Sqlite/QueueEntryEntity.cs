@@ -31,8 +31,13 @@ public sealed class QueueEntryEntity
   /// <summary>Mirrors <see cref="QueueEntry.ServedAt"/>; null until the entry is called.</summary>
   public DateTimeOffset? ServedAt { get; set; }
 
-  /// <summary>Maps this row to the wire-facing <see cref="QueueEntry"/> record.</summary>
-  public QueueEntry ToContract() => new()
+  /// <summary>
+  /// Maps this row to the wire-facing <see cref="QueueEntry"/> record. <paramref name="documentCount"/> comes
+  /// from the caller (the snapshot builder counts documents once for the whole queue, rather than this row
+  /// carrying a denormalized counter) and defaults to 0 for the change-event/replay call sites that don't have —
+  /// and don't need — an accurate count. See <see cref="QueueEntry.DocumentCount"/>.
+  /// </summary>
+  public QueueEntry ToContract(int documentCount = 0) => new()
   {
     Id = this.Id,
     DisplayName = this.DisplayName,
@@ -40,6 +45,7 @@ public sealed class QueueEntryEntity
     CheckedInAt = this.CheckedInAt,
     Status = this.Status,
     ServedBy = this.ServedBy,
-    ServedAt = this.ServedAt
+    ServedAt = this.ServedAt,
+    DocumentCount = documentCount
   };
 }

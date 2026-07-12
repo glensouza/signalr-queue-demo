@@ -9,21 +9,21 @@
     @case (QueueStatus.Serving) {
       <div class="state state-serving">
         <p class="eyebrow">It's your turn</p>
-        <h1 class="headline">Please come to the counter</h1>
+        <h1 class="headline">{{ checkIn().entry.displayName }}, please come to the counter</h1>
         <p class="detail">Ticket {{ checkIn().entry.ticketNumber }}</p>
       </div>
     }
     @case (QueueStatus.Completed) {
       <div class="state state-complete">
         <p class="eyebrow">All done</p>
-        <h1 class="headline">Thank you</h1>
-        <p class="detail">Returning to the start in {{ secondsUntilReset() }}s…</p>
+        <h1 class="headline">Thank you, {{ checkIn().entry.displayName }}</h1>
+        <p class="detail">Removing from your list in {{ secondsUntilReset() }}s…</p>
       </div>
     }
     @default {
       <!-- Waiting, or the brief pre-snapshot window (position falls back to the check-in seed). -->
       <div class="state state-waiting">
-        <p class="eyebrow">You're checked in</p>
+        <p class="eyebrow">Checked in</p>
         <p class="position-number">#{{ position() }}</p>
         <h1 class="headline">{{ position() === 1 ? "You're next" : 'in line' }}</h1>
         <p class="detail">
@@ -38,7 +38,9 @@
     <app-document-upload [entryId]="checkIn().entryId" />
   }
 
+  <!-- Per-person control: removes just this card from the device's tracked list (the shell owns "check someone
+       else in"). Removing one person never affects anyone else still being tracked on the same device. -->
   <button class="secondary-button" type="button" (click)="startOver()">
-    {{ status() === QueueStatus.Completed ? 'Start over now' : 'Check someone else in' }}
+    {{ status() === QueueStatus.Completed ? 'Clear' : 'Stop tracking' }}
   </button>
 </section>

@@ -208,18 +208,40 @@ public sealed class SqliteQueueRepository(QueueDbContext dbContext) : IQueueRepo
     };
   }
 
+  public async Task<QueueUpdated?> RecordDocumentChangeAsync(string entryId, CancellationToken ct = default)
+  {
+    QueueEntryEntity? entity = await this.dbContext.Entries.FirstOrDefaultAsync(e => e.Id == entryId, ct);
+    if (entity is null)
+    {
+      return null;
+    }
+
+    // Same "append a change event + rebuild the snapshot in one transaction" tail as call-next/complete — the
+    // entry's status is deliberately not touched here; the only thing that changed is its document set, which the
+    // rebuilt snapshot's DocumentCount reflects.
+    return await this.RecordChangeAndBuildUpdateAsync(entity, ct);
+  }
+
   private async Task<QueueSnapshot> BuildSnapshotAsync(CancellationToken ct)
   {
     List<QueueEntryEntity> entities = await this.dbContext.Entries
       .OrderBy(e => e.CheckedInAt)
       .ToListAsync(ct);
 
+    // One grouped count for the whole queue rather than a per-row subquery: cheaper, and it keeps the document
+    // count off the entry row (no denormalized counter to keep in sync on every upload/delete). Entries with no
+    // documents simply won't appear in the dictionary — GetValueOrDefault yields 0 for them.
+    Dictionary<string, int> documentCounts = await this.dbContext.Documents
+      .GroupBy(d => d.EntryId)
+      .Select(g => new { EntryId = g.Key, Count = g.Count() })
+      .ToDictionaryAsync(g => g.EntryId, g => g.Count, ct);
+
     return new QueueSnapshot
     {
       TotalWaiting = entities.Count(e => e.Status == QueueStatus.Waiting),
       TotalServing = entities.Count(e => e.Status == QueueStatus.Serving),
       TotalCompleted = entities.Count(e => e.Status == QueueStatus.Completed),
-      Queue = entities.Select(e => e.ToContract()).ToList()
+      Queue = entities.Select(e => e.ToContract(documentCounts.GetValueOrDefault(e.Id))).ToList()
     };
   }
 }

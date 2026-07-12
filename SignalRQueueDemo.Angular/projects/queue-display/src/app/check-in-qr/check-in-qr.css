@@ -1,0 +1,35 @@
+/* Corner call-to-action on the board. Minimal styling — the POC compares plumbing, not polish — but sized so the
+   QR is scannable and the URL legible across a waiting room. */
+.check-in-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  padding: 1rem 1.5rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 0.75rem;
+  background: white;
+}
+
+.cta-label {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.cta-qr {
+  width: 160px;
+  height: 160px;
+  image-rendering: pixelated; /* keep QR modules crisp when the data URL is scaled up */
+}
+
+.cta-url {
+  margin: 0;
+  font-family: monospace;
+  font-size: 0.95rem;
+  color: #1a5fb4;
+  word-break: break-all;
+  text-align: center;
+}

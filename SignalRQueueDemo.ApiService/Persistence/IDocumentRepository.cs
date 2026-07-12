@@ -39,6 +39,15 @@ public interface IDocumentRepository
 
   /// <summary>A single document's metadata plus the blob name it's stored under, or null if no such document exists for that entry.</summary>
   Task<DocumentRecord?> GetDocumentAsync(string entryId, string documentId, CancellationToken ct = default);
+
+  /// <summary>
+  /// Removes all document-metadata rows for an entry — the metadata half of the "delete an entry's documents once
+  /// it's completed" cleanup (the blob half is <c>DocumentBlobStore.DeleteAllForEntryAsync</c>). Idempotent: an
+  /// entry with no documents is a no-op, so completing an entry that never had one is harmless. Metadata is
+  /// deleted before the blobs (see the complete endpoint) so a partial failure can only ever leave an orphaned
+  /// blob — harmless — never a metadata row pointing at content that's already gone.
+  /// </summary>
+  Task DeleteDocumentsAsync(string entryId, CancellationToken ct = default);
 }
 
 /// <summary>

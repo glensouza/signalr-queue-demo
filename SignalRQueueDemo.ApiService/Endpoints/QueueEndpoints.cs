@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using SignalRQueueDemo.ApiService.Hubs;
 using SignalRQueueDemo.ApiService.Persistence;
+using SignalRQueueDemo.ApiService.Persistence.Blob;
 using SignalRQueueDemo.Contracts;
 
 namespace SignalRQueueDemo.ApiService.Endpoints;
@@ -119,7 +120,10 @@ public static class QueueEndpoints
   private static async Task<IResult> HandleCompleteAsync(
     string id,
     IQueueRepository repository,
+    IDocumentRepository documentRepository,
+    DocumentBlobStore blobStore,
     QueueBroadcaster broadcaster,
+    ILoggerFactory loggerFactory,
     CancellationToken ct)
   {
     QueueOperationResult result = await repository.CompleteAsync(id, ct);
@@ -128,6 +132,23 @@ public static class QueueEndpoints
     {
       // Success always carries a non-null Update (QueueOperationResult.Success); Failure never reports Success.
       await broadcaster.BroadcastAsync(result.Update!);
+
+      // A visitor's supporting documents exist only to be reviewed while they're in the queue; once completed there's
+      // no reason to keep them, so this deletes both halves. Metadata FIRST, then blobs: a failure partway can then
+      // only ever leave an orphaned blob (harmless, cleanable) — never a metadata row pointing at content that's
+      // already gone, which is the very "content missing" failure this whole change exists to avoid. Best-effort and
+      // off the response's critical path: the entry is already completed and broadcast, so a cleanup hiccup logs and
+      // moves on rather than turning a successful complete into a 500 the caller would retry.
+      try
+      {
+        await documentRepository.DeleteDocumentsAsync(id, ct);
+        await blobStore.DeleteAllForEntryAsync(id, ct);
+      }
+      catch (Exception ex)
+      {
+        loggerFactory.CreateLogger("SignalRQueueDemo.ApiService.Endpoints.QueueEndpoints").LogWarning(
+          ex, "Completed entry {EntryId} but failed to delete its documents; content may be orphaned in Blob Storage.", id);
+      }
     }
 
     return result.Outcome switch

@@ -306,3 +306,35 @@ One dated entry per architecture/implementation decision made along the way — 
 **Decision:** set `withCredentials: false` on the hub connection (`HubConnectionBuilder.withUrl(url, { withCredentials: false })`), matching the REST client. Nothing in this system authenticates with cookies — the staff key and check-in token are plain headers — so credentials on the socket were never needed; turning them off makes the hub's requests non-credentialed and the existing loopback CORS policy (which already works for REST) covers them too.
 
 **Rejected:** adding `AllowCredentials()` to the API's CORS policy instead — it would also unblock the socket, but it grants credentialed cross-origin access nothing uses, and pairing `AllowCredentials` with the permissive loopback origin predicate is exactly the combination CORS guidance warns against. Fixing it on the one client that opts into credentials by default is narrower and truer to the design (header auth, no cookies).
+
+## 2026-07-12 — Uploaded documents: blobs persist across restarts, and are deleted when the entry completes
+
+**Context:** document *metadata* is stored in the queue's own store (SQLite by default, which persists to a file across `aspire run` restarts), but document *content* is stored in Azurite Blob Storage, whose emulator started empty every run. So a document uploaded in one run left a metadata row in the next run pointing at a blob that no longer existed — and viewing it failed with a 500 "content missing" that the staff UI surfaced as a confusing "failed to load document".
+
+**Decision (two halves, chosen with the owner):** (1) give the Azurite emulator a data volume (`RunAsEmulator(e => e.WithDataVolume())`) so blob content has the same across-restart lifetime as the metadata; (2) delete an entry's documents — metadata rows *then* blob container — when it's completed (`HandleCompleteAsync`), so content lives exactly as long as the visitor is in the queue and no longer. Metadata is deleted before blobs so a partial failure can only orphan a (harmless) blob, never leave a metadata row pointing at deleted content — the same ordering rule the upload path already follows in reverse. The cleanup is best-effort and off the response path: the entry is already completed and broadcast, so a cleanup hiccup logs a warning rather than turning a successful complete into a retryable 500.
+
+**Rejected:** making the SQLite metadata ephemeral instead (reset every run) — the owner wanted data to survive restarts, and the ADR treats SQLite as a real backend, so persisting both halves is the consistent choice. Also rejected: leaving the mismatch and only handling the missing blob gracefully — that turns "view my document" into a dead end, which defeats the feature.
+
+## 2026-07-12 — `QueueEntry.DocumentCount` on the snapshot, refreshed live by broadcasting on upload
+
+**Context:** the staff console should hide its "view documents" control for entries that have none, rather than making staff click into an empty list. That needs a per-entry document count wherever the console already reads entries — the live snapshot.
+
+**Decision:** add a non-required `DocumentCount` (default 0) to `QueueEntry`, populated only on the snapshot path — `BuildSnapshotAsync` counts the documents store once for the whole queue (a single grouped query in SQLite; a client-side partition tally in Table Storage) rather than each entry row carrying a denormalized counter to keep in sync. Catch-up-replay entries leave it 0 and self-heal on the next full snapshot, matching how that path already treats its derived state as approximate. To make the count update the instant a waiting visitor attaches a file — not only on the next call-next/complete — the upload endpoint calls a new `IQueueRepository.RecordDocumentChangeAsync`, which appends a change event (so the sequence-numbered broadcast/catch-up protocol stays intact — no reused or skipped numbers) and pushes a fresh snapshot. The entry's lifecycle status is untouched; only its document set changed.
+
+**Rejected:** a denormalized counter column on the entry row (another thing to keep in sync on every upload/delete); a separate "which entries have documents" endpoint the console polls (an extra round-trip and a second source of truth); broadcasting the upload by reusing the current sequence number (violates the strictly-increasing invariant the reconnect protocol depends on).
+
+## 2026-07-12 — Public board shows masked names (first name + last initial), reversing the ticket-only stance
+
+**Context:** the queue-display board originally showed ticket numbers only, with an explicit "never show names on a public display" constraint documented in `NowServing`/`WaitingList`. The owner asked for names so a visitor can recognise their own row at a glance.
+
+**Decision:** show the name masked to first-name-plus-last-initial (`toPublicName`, e.g. "Jane Test" → "Jane T.") rather than the full name — a common waiting-room-board compromise that lets someone spot themselves without publishing full surnames (i.e. exactly who is at the court) to the whole room. The masking lives in one shared helper so it's trivial to change to full names or back to ticket-only. The internal staff console still shows full names — it's behind the staff-auth boundary, not public. Flagged to the owner as a reversal of a documented privacy constraint, with full names available on request.
+
+**Rejected:** full surnames on the public board (a real privacy regression in a court context, even if this POC only uses synthetic data); ticket-only (what the owner explicitly asked to change).
+
+## 2026-07-12 — public-checkin tracks multiple people per device; QR generated locally
+
+**Context:** the kiosk originally showed one person's position and "check someone else in" *replaced* it — so checking in a family member lost your own spot. And the board needed a "how to check in" affordance.
+
+**Decision:** the public-checkin shell now holds a *list* of check-ins and renders one live position card per person; "check someone else in" appends to the list (form reappears, existing cards stay), and a person leaves the list by completing (auto-reset) or "stop tracking". This directly fixes "I lost my spot" and lets one device watch several people at once. Separately, queue-display renders a check-in QR + URL; the URL comes from a new optional `RuntimeConfig.publicCheckinUrl` injected into only that container (AppHost → `PUBLIC_CHECKIN_URL` → `write-runtime-config.sh`), and the QR is encoded **locally** with the dependency-free `qrcode-generator` into an inline image data URL — never a QR web service, per the no-external-calls constraint. POC caveat recorded in the component: that URL is a localhost address, so the QR is illustrative of the pattern (a phone on another network can't reach localhost); a real deployment injects a routable URL.
+
+**Rejected:** removing "check someone else in" entirely (the owner offered that as an option, but multi-tracking is strictly more useful and was the other option offered); a QR web-service or CDN image (forbidden — external call, and it would leak the URL off-machine).

@@ -83,4 +83,16 @@ public sealed class DocumentBlobStore(BlobServiceClient blobServiceClient)
       return null;
     }
   }
+
+  /// <summary>
+  /// Deletes an entry's entire document container — every blob for that entry in one call, which container-per-entry
+  /// (see type remarks) makes possible without enumerating individual blobs. Used when the entry is completed so
+  /// document content lives exactly as long as the visitor is in the queue. Idempotent: a container that was never
+  /// created (the entry had no documents) is treated as already-gone, not an error.
+  /// </summary>
+  public async Task DeleteAllForEntryAsync(string entryId, CancellationToken ct = default)
+  {
+    BlobContainerClient container = this.blobServiceClient.GetBlobContainerClient(ContainerNameFor(entryId));
+    await container.DeleteIfExistsAsync(cancellationToken: ct);
+  }
 }

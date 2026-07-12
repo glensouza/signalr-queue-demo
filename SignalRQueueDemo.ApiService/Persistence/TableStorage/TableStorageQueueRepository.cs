@@ -69,12 +69,18 @@ public sealed class TableStorageQueueRepository : IQueueRepository
   private readonly TableClient entriesTable;
   private readonly TableClient changeEventsTable;
   private readonly TableClient countersTable;
+  private readonly TableClient documentsTable;
 
   public TableStorageQueueRepository(TableServiceClient tableServiceClient)
   {
     this.entriesTable = tableServiceClient.GetTableClient(EntriesTableName);
     this.changeEventsTable = tableServiceClient.GetTableClient(ChangeEventsTableName);
     this.countersTable = tableServiceClient.GetTableClient(CountersTableName);
+    // Read-only handle to the document-metadata table (owned by TableStorageDocumentRepository) so the snapshot
+    // can report each entry's document count without a cross-repository dependency — the two share the same
+    // physical table, addressed here by that repository's public table-name constant, not by taking a reference
+    // to the repository itself.
+    this.documentsTable = tableServiceClient.GetTableClient(TableStorageDocumentRepository.DocumentsTableName);
   }
 
   public async Task<CheckInResult> CheckInAsync(CheckInRequest request, CancellationToken ct = default)
@@ -200,6 +206,25 @@ public sealed class TableStorageQueueRepository : IQueueRepository
       SequenceNumber = await this.GetLatestSequenceAsync(ct),
       Snapshot = await this.BuildSnapshotAsync(ct)
     };
+
+  public async Task<QueueUpdated?> RecordDocumentChangeAsync(string entryId, CancellationToken ct = default)
+  {
+    QueueEntryTableEntity entity;
+    try
+    {
+      Response<QueueEntryTableEntity> response = await this.entriesTable.GetEntityAsync<QueueEntryTableEntity>(
+        QueueEntryTableEntity.PartitionKeyValue, entryId, cancellationToken: ct);
+      entity = response.Value;
+    }
+    catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
+    {
+      return null;
+    }
+
+    // The entry row itself isn't modified (its document set lives in another table); this only appends a change
+    // event so the rebuilt snapshot's DocumentCount reaches connected clients through the normal broadcast path.
+    return await this.RecordChangeAndBuildUpdateAsync(entity, ct);
+  }
 
   public async Task<QueueChangesSinceResponse> GetChangesSinceAsync(long sequenceNumber, CancellationToken ct = default)
   {
@@ -468,13 +493,32 @@ public sealed class TableStorageQueueRepository : IQueueRepository
     }
 
     List<QueueEntryTableEntity> ordered = entities.OrderBy(e => e.CheckedInAt).ToList();
+    Dictionary<string, int> documentCounts = await this.CountDocumentsByEntryAsync(ct);
 
     return new QueueSnapshot
     {
       TotalWaiting = ordered.Count(e => e.Status == nameof(QueueStatus.Waiting)),
       TotalServing = ordered.Count(e => e.Status == nameof(QueueStatus.Serving)),
       TotalCompleted = ordered.Count(e => e.Status == nameof(QueueStatus.Completed)),
-      Queue = ordered.Select(e => e.ToContract()).ToList()
+      Queue = ordered.Select(e => e.ToContract(documentCounts.GetValueOrDefault(e.RowKey))).ToList()
     };
+  }
+
+  /// <summary>
+  /// Counts document-metadata rows per entry by tallying each row's PartitionKey (which is the entry id — see
+  /// <see cref="DocumentTableEntity"/>). Table Storage has no server-side GROUP BY or COUNT, so this walks the
+  /// table client-side; only the PartitionKey is selected so the scan stays cheap (no metadata columns pulled),
+  /// and at this POC's document volume a full walk is well within budget.
+  /// </summary>
+  private async Task<Dictionary<string, int>> CountDocumentsByEntryAsync(CancellationToken ct)
+  {
+    Dictionary<string, int> counts = [];
+    await foreach (DocumentTableEntity document in this.documentsTable.QueryAsync<DocumentTableEntity>(
+      select: ["PartitionKey"], cancellationToken: ct))
+    {
+      counts[document.PartitionKey] = counts.GetValueOrDefault(document.PartitionKey) + 1;
+    }
+
+    return counts;
   }
 }

@@ -25,6 +25,8 @@ export interface QueueEntry {
   readonly status: QueueStatus;
   readonly servedBy: string | null;
   readonly servedAt: string | null;
+  /** How many documents are attached to this entry. Populated on the live snapshot; lets the staff console hide its "view documents" control when there's nothing to show. Defaults to 0 on catch-up replay entries — see the C# QueueEntry.DocumentCount remarks. */
+  readonly documentCount: number;
 }
 
 /** Mirrors SignalRQueueDemo.Contracts.CheckInTokenResponse — the response to GET /checkin/token. */

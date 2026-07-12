@@ -44,6 +44,16 @@ public sealed record QueueEntry
 
   /// <summary>When the entry moved to Serving, or null while still Waiting.</summary>
   public DateTimeOffset? ServedAt { get; init; }
+
+  /// <summary>
+  /// How many documents are currently attached to this entry. Lets a staff UI hide its "view documents" control
+  /// for entries that have none, instead of every consumer making a separate per-entry document call just to find
+  /// out there's nothing to show. Not <c>required</c> and defaults to 0: it's only meaningfully populated on the
+  /// live <see cref="QueueSnapshot"/> path (where the repository counts documents alongside the entries); the
+  /// per-entry copies carried by catch-up replay leave it at 0 and self-heal on the next full snapshot, matching
+  /// how that path already treats its derived state as approximate.
+  /// </summary>
+  public int DocumentCount { get; init; }
 }
 
 /// <summary>

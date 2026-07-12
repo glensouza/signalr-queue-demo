@@ -43,6 +43,19 @@ public interface IQueueRepository
   Task<QueueStateResponse> GetStateAsync(CancellationToken ct = default);
 
   /// <summary>
+  /// Records that an entry's document set changed (a document was added or its documents were cleared) and returns
+  /// the <see cref="QueueUpdated"/> to broadcast, or null if no such entry exists. The entry's lifecycle status is
+  /// untouched; this exists purely so a document upload/removal pushes a fresh snapshot — whose per-entry
+  /// <see cref="QueueEntry.DocumentCount"/> the staff console uses to show/hide its view-documents control — to
+  /// connected clients live, through the same sequence-numbered broadcast every other change already flows through
+  /// (rather than inventing a side channel or, worse, reusing a sequence number and breaking catch-up). The
+  /// replayed change-event carries the entry's lifecycle state, not its document count, so a catch-up after a
+  /// missed upload reflects the new count only on the next full snapshot — the same self-healing tolerance the
+  /// rest of <see cref="QueueEntry.DocumentCount"/> already documents.
+  /// </summary>
+  Task<QueueUpdated?> RecordDocumentChangeAsync(string entryId, CancellationToken ct = default);
+
+  /// <summary>
   /// Returns everything that changed after <paramref name="sequenceNumber"/>, for GET /queue/since/{seq} — the
   /// REST half of the reconnect/catch-up protocol (see <c>QueueHub</c>). Implementations fall back to a full
   /// snapshot (<see cref="QueueChangesSinceResponse.IsSnapshot"/> = true) instead of the raw diff when the

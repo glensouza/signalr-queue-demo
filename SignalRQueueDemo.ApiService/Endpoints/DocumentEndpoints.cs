@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
+using SignalRQueueDemo.ApiService.Hubs;
 using SignalRQueueDemo.ApiService.Persistence;
 using SignalRQueueDemo.ApiService.Persistence.Blob;
 using SignalRQueueDemo.Contracts;
@@ -86,6 +87,8 @@ public static class DocumentEndpoints
     CheckInTokenService tokenService,
     IDocumentRepository documentRepository,
     DocumentBlobStore blobStore,
+    IQueueRepository queueRepository,
+    QueueBroadcaster broadcaster,
     CancellationToken ct)
   {
     // Token first — before a single byte of the (potentially large) multipart body is read. This is why the
@@ -192,6 +195,18 @@ public static class DocumentEndpoints
 
     DocumentMetadata metadata = await documentRepository.AddDocumentAsync(
       id, file.FileName, file.ContentType, file.Length, blobName, ct);
+
+    // Push a fresh snapshot so every connected client's per-entry DocumentCount updates live — this is what lets
+    // the staff console reveal its "view documents" control the moment a waiting visitor attaches a file, instead
+    // of only after the next call-next/complete. Best-effort, mirroring how the queue mutations broadcast: the
+    // document is already durably stored, so a failed or entry-less (null) push must never turn a successful
+    // upload into an error. RecordDocumentChangeAsync returns null only if the entry vanished between the
+    // existence check above and here — nothing to broadcast in that case.
+    QueueUpdated? update = await queueRepository.RecordDocumentChangeAsync(id, ct);
+    if (update is not null)
+    {
+      await broadcaster.BroadcastAsync(update);
+    }
 
     return Results.Created(
       $"/queue/{id}/documents/{metadata.Id}", new DocumentUploadResponse { Document = metadata });

@@ -68,8 +68,12 @@ public sealed class QueueEntryTableEntity : ITableEntity
       Status = nameof(QueueStatus.Waiting)
     };
 
-  /// <summary>Maps this row to the wire-facing <see cref="QueueEntry"/> record.</summary>
-  public QueueEntry ToContract() => new()
+  /// <summary>
+  /// Maps this row to the wire-facing <see cref="QueueEntry"/> record. <paramref name="documentCount"/> is supplied
+  /// by the snapshot builder (which counts the documents table once for the whole queue) and defaults to 0 for the
+  /// change-event/replay call sites that neither have nor need it — see <see cref="QueueEntry.DocumentCount"/>.
+  /// </summary>
+  public QueueEntry ToContract(int documentCount = 0) => new()
   {
     Id = this.RowKey,
     DisplayName = this.DisplayName,
@@ -77,6 +81,7 @@ public sealed class QueueEntryTableEntity : ITableEntity
     CheckedInAt = this.CheckedInAt,
     Status = Enum.Parse<QueueStatus>(this.Status),
     ServedBy = this.ServedBy,
-    ServedAt = this.ServedAt
+    ServedAt = this.ServedAt,
+    DocumentCount = documentCount
   };
 }

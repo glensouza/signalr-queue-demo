@@ -9,4 +9,12 @@ export interface RuntimeConfig {
    * QueueApiService's REST calls and QueueHubService's `/hubs/queue` connection. e.g. "http://localhost:5410".
    */
   readonly apiBaseUrl: string;
+
+  /**
+   * URL of the public-checkin kiosk app, for the queue-display board to render as a "check in here" QR code and
+   * link. Optional because only queue-display's container is given it (via the PUBLIC_CHECKIN_URL env var the
+   * AppHost injects from public-checkin's endpoint); the other apps' config.json omits it entirely. Undefined
+   * means "don't render the check-in call-to-action" rather than an error. e.g. "http://localhost:53592".
+   */
+  readonly publicCheckinUrl?: string;
 }

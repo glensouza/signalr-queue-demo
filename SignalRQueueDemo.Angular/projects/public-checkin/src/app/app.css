@@ -5,3 +5,16 @@
   margin: 0 auto;
   padding: 2rem 1.5rem;
 }
+
+/* Stacks each tracked person's live card with a divider between them, so several people tracked on one device
+   read as a clear list rather than running together. */
+.tracked-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.tracked-list > app-position-view:not(:first-child) {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 2px solid #e0e0e0;
+}

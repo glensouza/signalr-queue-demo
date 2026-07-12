@@ -62,4 +62,10 @@ public sealed class SqliteDocumentRepository(QueueDbContext dbContext) : IDocume
 
     return entity is null ? null : new DocumentRecord { Metadata = entity.ToContract(), BlobName = entity.BlobName };
   }
+
+  public Task DeleteDocumentsAsync(string entryId, CancellationToken ct = default) =>
+    // ExecuteDeleteAsync issues a single DELETE ... WHERE rather than loading each row to delete it — the rows
+    // aren't needed here (the blobs are cleaned up separately by their container), and it's a no-op when the
+    // entry has none.
+    this.dbContext.Documents.Where(d => d.EntryId == entryId).ExecuteDeleteAsync(ct);
 }

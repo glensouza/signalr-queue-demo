@@ -134,11 +134,11 @@
   flex-wrap: wrap;
 }
 
-.call-next-footer {
-  display: flex;
-  justify-content: center;
-  padding: 1rem 0;
-  border-top: 2px solid #e0e0e0;
+/* Call Next now lives at the top of the Waiting column (under the count), full-width so it's an obvious primary
+   action a staff member never has to scroll to reach. */
+.call-next-button {
+  width: 100%;
+  margin-bottom: 0.5rem;
 }
 
 .large {

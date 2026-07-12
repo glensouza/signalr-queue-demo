@@ -7,6 +7,7 @@
       @for (entry of servingEntries(); track entry.id) {
         <div class="entry ticket-card">
           <div class="ticket-number">{{ entry.ticketNumber }}</div>
+          <div class="entry-name">{{ publicName(entry.displayName) }}</div>
         </div>
       }
     }
