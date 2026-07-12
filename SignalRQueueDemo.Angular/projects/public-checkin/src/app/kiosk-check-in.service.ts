@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { CheckInRequest, CheckInResponse, DocumentUploadResponse, QueueApiService } from 'shared';
+import { CheckInRequest, CheckInResponse, DocumentUploadResponse, QueueApiService, QueueUpdated } from 'shared';
 
 /**
  * The public-checkin app's own thin orchestration over {@link QueueApiService} for the two token-gated calls a
@@ -41,6 +41,16 @@ export class KioskCheckInService {
   async uploadDocument(entryId: string, file: File): Promise<DocumentUploadResponse> {
     const token: string = await this.issueToken();
     return firstValueFrom(this.api.uploadDocument(entryId, file, token));
+  }
+
+  /**
+   * Fetches a fresh check-in token, then cancels an existing entry (the kiosk "stop tracking" action). The same
+   * token type gates check-in, upload, and cancel on the server (see <c>CheckInTokenFilter</c>), so the flow is
+   * identical — a visitor abandoning the line is on the same public, no-staff-auth path as checking in.
+   */
+  async cancel(entryId: string): Promise<QueueUpdated> {
+    const token: string = await this.issueToken();
+    return firstValueFrom(this.api.cancel(entryId, token));
   }
 
   private async issueToken(): Promise<string> {

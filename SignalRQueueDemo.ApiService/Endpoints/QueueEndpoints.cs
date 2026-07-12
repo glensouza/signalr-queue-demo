@@ -39,8 +39,14 @@ public static class QueueEndpoints
     app.MapPost("/queue/{id}/complete", HandleCompleteAsync)
       .RequireCors(CorsPolicies.KnownFrontends)
       .AddEndpointFilter<StaffAuthFilter>();
+    // Cancel is a public (kiosk-initiated) write, so it carries the same CheckInTokenFilter as POST /checkin rather
+    // than the StaffAuthFilter the staff-only complete/call-next use — a visitor tapping "Stop tracking" on the kiosk
+    // isn't staff, but this must not be an unauthenticated write either (that would let any caller cancel and delete
+    // the documents of an arbitrary entry by id). It follows the "protect writes, not reads" anti-forgery pattern the
+    // rest of the public path uses; see the 2026-07-12 cancel decision in docs/decisions.md.
     app.MapPost("/queue/{id}/cancel", HandleCancelAsync)
-      .RequireCors(CorsPolicies.KnownFrontends);
+      .RequireCors(CorsPolicies.KnownFrontends)
+      .AddEndpointFilter<CheckInTokenFilter>();
     // A read-only "is this staff key valid?" probe, gated by the same StaffAuthFilter as the real staff actions.
     // It exists so the internal-queue sign-in screen can reject a wrong key up front instead of silently accepting
     // any non-empty string and only surfacing the 401 on the first call-next/complete/document view. The filter

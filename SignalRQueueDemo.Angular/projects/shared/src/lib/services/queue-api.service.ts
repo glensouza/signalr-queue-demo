@@ -78,11 +78,12 @@ export class QueueApiService {
     );
   }
 
-  /** POST /queue/{id}/cancel — cancels an entry in the queue. */
-  cancel(id: string): Observable<QueueUpdated> {
+  /** POST /queue/{id}/cancel — cancels a Waiting/Serving entry (the kiosk "stop tracking" action). Gated by the same check-in token as {@link checkIn}, so `checkInToken` must be a value freshly issued by {@link getCheckInToken}. */
+  cancel(id: string, checkInToken: string): Observable<QueueUpdated> {
     return this.httpClient.post<QueueUpdated>(
       `${this.baseUrl}/queue/${encodeURIComponent(id)}/cancel`,
-      {}
+      {},
+      { headers: { [CHECK_IN_TOKEN_HEADER]: checkInToken } },
     );
   }
 

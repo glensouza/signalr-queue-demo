@@ -259,7 +259,7 @@ public sealed class SqliteQueueRepository(QueueDbContext dbContext) : IQueueRepo
     {
       TotalWaiting = entities.Count(e => e.Status == QueueStatus.Waiting),
       TotalServing = entities.Count(e => e.Status == QueueStatus.Serving),
-      TotalCompleted = entities.Count(e => e.Status == QueueStatus.Completed || e.Status == QueueStatus.Cancelled),
+      TotalCompleted = entities.Count(e => e.Status == QueueStatus.Completed),
       Queue = entities.Select(e => e.ToContract(documentCounts.GetValueOrDefault(e.Id))).ToList()
     };
   }

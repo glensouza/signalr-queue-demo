@@ -545,7 +545,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
     {
       TotalWaiting = ordered.Count(e => e.Status == nameof(QueueStatus.Waiting)),
       TotalServing = ordered.Count(e => e.Status == nameof(QueueStatus.Serving)),
-      TotalCompleted = ordered.Count(e => e.Status == nameof(QueueStatus.Completed) || e.Status == nameof(QueueStatus.Cancelled)),
+      TotalCompleted = ordered.Count(e => e.Status == nameof(QueueStatus.Completed)),
       Queue = ordered.Select(e => e.ToContract(documentCounts.GetValueOrDefault(e.RowKey))).ToList()
     };
   }
