@@ -100,29 +100,16 @@ IResourceBuilder<ContainerResource> queueDisplay = builder
     .WithEnvironment("API_BASE_URL", apiHttpEndpoint)
     .WaitFor(apiService);
 
-// CORS coordination: the browser loads each Angular app from ITS OWN Aspire-assigned external origin (a
-// different host:port per container, decided at `aspire run` time), so the API's allowed-origins list
-// (appsettings.json's Cors:AllowedOrigins placeholders — see Program.cs) must be overridden with those exact
-// origins, not left pointing at the fixed local dev-server ports. Aspire's double-underscore config-binding
-// convention (Cors__AllowedOrigins__0 -> configuration key Cors:AllowedOrigins[0]) lets each container's
-// endpoint reference flow straight into the array index its dev-server placeholder occupies today.
-//
-// DECISION: this is a reference only — no WithReference/WaitFor here. apiService already has everything it
-// needs to resolve these values once the containers' ports are assigned; it does not need to wait for the
-// Angular containers to be *running* first, which is fortunate, because they WaitFor(apiService) above — a
-// mutual WaitFor here would deadlock every startup. Env vars built from endpoint references are resolved
-// lazily by Aspire regardless of the order resources start in, so declaring this after WaitFor(apiService)
-// above (rather than before the Angular resources exist) is just about readability, not correctness.
-//
-// Same KnownNetworkIdentifiers.LocalhostNetwork reasoning as apiHttpEndpoint above, applied in the opposite
-// direction: the browser's CORS preflight sends the Origin it loaded the page from -- the host-mapped
-// "http://localhost:{port}" -- so apiService's allowlist must contain that exact value, not a container-network
-// address the browser never sees. Confirmed with a live CORS preflight (`curl -X OPTIONS .../queue -H
-// "Origin: http://localhost:{publicCheckin's mapped port}"`) returning Access-Control-Allow-Origin only after
-// this fix; without it, every containerized Angular app's cross-origin calls silently failed CORS.
-apiService
-    .WithEnvironment("Cors__AllowedOrigins__0", publicCheckin.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork))
-    .WithEnvironment("Cors__AllowedOrigins__1", internalQueue.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork))
-    .WithEnvironment("Cors__AllowedOrigins__2", queueDisplay.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork));
+// CORS coordination is deliberately NOT done here by injecting the Angular containers' origins into apiService.
+// That was tried and it silently failed in a real browser: Aspire serves each container under its own
+// `*.dev.localhost` hostname (observed: http://public-checkin-signalrqueuedemo.dev.localhost:{port}), but an
+// endpoint reference resolved with KnownNetworkIdentifiers.LocalhostNetwork yields the `localhost` host instead —
+// matching the port but not the host the browser actually loads the page from, so the API's exact-origin CORS
+// check rejected every request. (Same-origin curl checks sending Origin: http://localhost:{port} passed, which is
+// exactly why the mismatch wasn't caught at the HTTP level.) Rather than chase Aspire's per-run, per-resource host
+// naming from here, the API accepts any loopback-family origin when Cors:AllowLoopbackOrigins is true — correct for
+// this localhost-only court POC and immune to the port/host churn. See ApiService/Program.cs's CORS decision
+// comment and docs/decisions.md. apiService keeps WithExternalHttpEndpoints() (above) so the browser can still
+// reach the API cross-origin at the address baked into each container's config.json.
 
 builder.Build().Run();

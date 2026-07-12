@@ -27,18 +27,51 @@ foreach (string requiredKey in requiredSecretKeys)
     }
 }
 
-// DECISION: allowed origins are config-driven (Cors:AllowedOrigins), not hardcoded or read from Aspire service
-// discovery. The Angular apps (public-checkin, queue-display, internal-queue) don't exist as AppHost project
-// resources yet — they're later work items — so there's no service-discovery-injected origin to read today.
-// appsettings.json seeds this with the Angular CLI dev-server's default port as a placeholder; the Angular work
-// items update it to the real container origins once those resources exist. The one policy covers every known
-// browser frontend (public and staff) and is applied to every browser-reachable surface — the REST endpoints
-// and the SignalR hub below — because CORS isn't the trust boundary (StaffAuthFilter/CheckInTokenFilter are);
-// it only keeps legitimate frontends from being refused by the browser before those checks run. See docs/decisions.md.
+// DECISION: allowed origins are config-driven (Cors:AllowedOrigins) for any non-loopback deployment, but a
+// POC-only escape hatch (Cors:AllowLoopbackOrigins, default true) additionally accepts ANY loopback-family
+// origin. This exists because of how Aspire actually serves the three containerized Angular apps: it assigns each
+// one a host and port at `aspire run` time, and serves them under its own `*.dev.localhost` hostname scheme
+// (e.g. http://public-checkin-signalrqueuedemo.dev.localhost:53592) — NOT plain http://localhost:{port}. A fixed
+// allowlist can't name those origins ahead of time, and an earlier attempt to inject them from the AppHost pinned
+// the host to "localhost", so it matched the port but not the *.dev.localhost host the browser really loads from —
+// CORS then rejected every real-browser request even though same-origin curl checks (which sent an Origin of
+// http://localhost:{port}) passed. Every host in play here — localhost, *.localhost, 127.0.0.1, ::1 — resolves to
+// loopback on the single isolated machine this court POC runs on, so trusting the loopback family is both correct
+// for this environment and immune to Aspire's per-run port/host churn.
+//
+// This is NOT the trust boundary (StaffAuthFilter/CheckInTokenFilter are) and it is applied to every
+// browser-reachable surface — the REST endpoints and the SignalR hub below. It MUST be tightened to an explicit
+// allowlist (set Cors:AllowLoopbackOrigins=false and populate Cors:AllowedOrigins) for any deployment reachable
+// beyond localhost. See docs/decisions.md.
 string[] knownFrontendOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+bool allowLoopbackOrigins = builder.Configuration.GetValue("Cors:AllowLoopbackOrigins", true);
 builder.Services.AddCors(options => options.AddPolicy(
   CorsPolicies.KnownFrontends,
-  policy => policy.WithOrigins(knownFrontendOrigins).AllowAnyHeader().AllowAnyMethod()));
+  policy => policy
+    .SetIsOriginAllowed(origin => IsAllowedFrontendOrigin(origin, knownFrontendOrigins, allowLoopbackOrigins))
+    .AllowAnyHeader()
+    .AllowAnyMethod()));
+
+// Origin predicate for the KnownFrontends policy. Named (not an inline lambda) so the two-part rule — explicit
+// config allowlist OR loopback-family host — reads clearly at the call site. A configured origin matches exactly
+// (case-insensitively); the loopback branch accepts localhost, the raw loopback IPs, and any `*.localhost`
+// subdomain, which is what covers Aspire's `*.dev.localhost` container hostnames.
+static bool IsAllowedFrontendOrigin(string origin, string[] configuredOrigins, bool allowLoopback)
+{
+    if (Array.Exists(configuredOrigins, o => string.Equals(o, origin, StringComparison.OrdinalIgnoreCase)))
+    {
+        return true;
+    }
+
+    if (!allowLoopback || !Uri.TryCreate(origin, UriKind.Absolute, out Uri? uri))
+    {
+        return false;
+    }
+
+    // Uri.IsLoopback already covers localhost / 127.0.0.1 / ::1; the suffix check adds Aspire's *.dev.localhost
+    // (and any other *.localhost), which Uri.IsLoopback does not treat as loopback on its own.
+    return uri.IsLoopback || uri.Host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
+}
 
 // Stateless HMAC token issuer/validator for the public check-in path's anti-forgery-style hardening — see
 // CheckInTokenService's remarks for why this exists instead of ASP.NET Core's cookie-based antiforgery system.
