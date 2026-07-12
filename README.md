@@ -90,7 +90,23 @@ Public check-in, internal call-next, and queue display as Blazor pages — self-
 
 ### 5. `SignalRQueueDemo.AppHost` — orchestrates all of it
 
-`ApiService` and `Web` as project resources; each Angular app containerized via `AddDockerfile` and wired with `WithReference(api)` / service-discovery env vars; Azurite (Blob + Table) as an emulator resource; the Azure SignalR Emulator only when the feature flag is on; `ServiceDefaults` (OpenTelemetry, health checks, service discovery) on every resource. Goal: **one command brings up everything with zero manual port/URL wiring.**
+`ApiService` and `Web` as project resources; Azurite (Blob + Table) as an emulator resource; the Azure SignalR Emulator only when the feature flag is on; `ServiceDefaults` (OpenTelemetry, health checks, service discovery) on every resource. Goal: **one command brings up everything with zero manual port/URL wiring.**
+
+Each of the three Angular apps is containerized via `builder.AddDockerfile(name, "../SignalRQueueDemo.Angular", "Dockerfile").WithBuildArg("APP_NAME", ...)` — one parameterized `Dockerfile` (see [Containers](#containers-the-angular-apps) below), three resources differing only in which app the build arg selects. Each container gets `API_BASE_URL` injected from `apiService.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork)`, and `apiService` in turn gets its `Cors:AllowedOrigins` overridden (via `Cors__AllowedOrigins__0/1/2` env vars) from each container's own endpoint the same way — both directions explicitly pinned to `KnownNetworkIdentifiers.LocalhostNetwork` because the *unqualified* `GetEndpoint(name)` resolves differently depending on which resource happens to consume it, and for a container consumer that turned out to be Aspire's internal container-network tunnel address (`http://aspire.dev.internal:{port}`) — unreachable from an actual browser. See `AppHost.cs`'s comments at both call sites and the dated entry in `docs/decisions.md` for the full story, verified against a live `aspire run`.
+
+#### Containers: the Angular apps
+
+`SignalRQueueDemo.Angular/Dockerfile` is one multi-stage build (`node:22-slim` → `nginx:alpine`) parameterized by an `APP_NAME` build arg, shared by all three apps — see the file's own header comment for why one Dockerfile replaces three near-duplicates and why the build context is the whole Angular workspace folder, not a per-app subfolder. `SignalRQueueDemo.Angular/docker/write-runtime-config.sh` runs as an nginx `/docker-entrypoint.d/` script at container start, overwriting `config.json` from the `API_BASE_URL` environment variable Aspire injects — never baked in at `docker build` time, since the API's address isn't known until `aspire run` assigns it. `SignalRQueueDemo.Angular/docker/nginx.conf` serves the SPA (`try_files ... /index.html` for client-side routing) and marks `config.json` `no-store` so a container restart's new address is never masked by a cached copy of the old one.
+
+**Measured, not estimated** (`docker images` / `docker build` against this repo, three separate `docker build --build-arg APP_NAME=<app>` runs):
+
+| App | Image size | Cold build (no cache) | Cold build (cached `npm ci` + workspace layers) |
+|---|---|---|---|
+| `public-checkin` | 92.8 MB | ~36 s | ~8 s |
+| `internal-queue` | 92.8 MB | ~36 s (shares node/nginx base layers with the above) | ~11 s |
+| `queue-display` | 92.8 MB | ~36 s (same) | ~10 s |
+
+All three images are 92.8 MB — identical `node:22-slim`/`nginx:alpine` base layers, differing only in the final `COPY --from=build .../dist/<app>/browser` layer (a few hundred KB of compiled JS/CSS per app), so Docker's layer cache means only the first of the three `docker build` invocations pays the full `npm ci` (~14 s) and Angular compile cost. Container cold start (measured via `docker run` to the first successful `GET /` response) was ~1.6 s. Aspire's own dashboard reports a similar startup time when it builds and starts all three under `aspire run`, plus whatever time the underlying `docker build` takes on a machine with no prior layer cache (a few minutes total the very first time `aspire run` is used in a fresh checkout — after that, only source changes invalidate the cache).
 
 ### Scaling past self-hosted: the Azure SignalR story
 
@@ -124,11 +140,11 @@ Work is executed as an ordered, dependency-aware backlog of 14 work items, each 
 
 ## Current repo status
 
-.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository`, now with two swappable backends, plus document upload/viewing behind `IDocumentRepository` and `DocumentBlobStore`. The Angular workspace (`SignalRQueueDemo.Angular/`) has its `shared` library and three app shells built (#8), and the first real app — `public-checkin`, the kiosk check-in + live-position + document-upload UI (#9) — is built on top of it; see [Angular workspace](#3-angular-workspace-signalrqueuedemoangular--three-apps-one-shared-library) above. The Blazor `Web` project and the other two Angular app UIs (`internal-queue` #10, `queue-display` #11) are still shells/not-yet-built — they are built in later work items.
+.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository`, now with two swappable backends, plus document upload/viewing behind `IDocumentRepository` and `DocumentBlobStore`. The Angular workspace (`SignalRQueueDemo.Angular/`) has its `shared` library and three app shells built, `public-checkin` (the kiosk check-in + live-position + document-upload UI) built on top of it, and all three apps now containerized and wired into `aspire run` — see [Angular workspace](#3-angular-workspace-signalrqueuedemoangular--three-apps-one-shared-library) and [Containers](#containers-the-angular-apps) above. The Blazor `Web` project and the other two Angular app UIs (`internal-queue`, `queue-display`) are still shells/not-yet-built — they run as containers already, but with placeholder content until their real UIs land.
 
 | Project / path | Purpose |
 |---|---|
-| `SignalRQueueDemo.AppHost` | Aspire orchestrator — brings up every resource with one command, including the Azurite Table Storage and Blob Storage emulator resources, plus the Azure SignalR Emulator when `UseAzureSignalR=true` (see [Scaling past self-hosted](#scaling-past-self-hosted-the-azure-signalr-story)). |
+| `SignalRQueueDemo.AppHost` | Aspire orchestrator — brings up every resource with one command: `ApiService`/`Web` as project resources, the three Angular apps as `AddDockerfile` container resources (`API_BASE_URL`/CORS wired via endpoint references — see [above](#5-signalrqueuedemoapphost--orchestrates-all-of-it)), the Azurite Table Storage and Blob Storage emulator resources, plus the Azure SignalR Emulator when `UseAzureSignalR=true` (see [Scaling past self-hosted](#scaling-past-self-hosted-the-azure-signalr-story)). |
 | `SignalRQueueDemo.ApiService` | Minimal API: `GET /checkin/token`, `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, `GET /queue/since/{sequenceNumber}`, backed by `IQueueRepository` → `SqliteQueueRepository` or `TableStorageQueueRepository` (config-selected); plus `POST /checkin/{id}/documents`, `GET /queue/{id}/documents`, `GET /queue/{id}/documents/{docId}`, backed by `IDocumentRepository` (same config-selected backend) and `DocumentBlobStore` (Azurite Blob Storage, not config-selected); staff routes and document viewing gated by `StaffAuthFilter`, the check-in path by a short-lived check-in token, all browser surfaces (REST + hub) behind the `KnownFrontends` CORS policy (see [Security model](#security-model)); plus the self-hosted `QueueHub` (`/hubs/queue`) broadcasting `QueueUpdated`, and the `UseAzureSignalR` escape hatch (`AzureSignalRDefaultModeStub`, `AzureSignalRServerlessDemoService`). |
 | `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums (QueueEntry, QueueStatus, QueueUpdated, QueueStateResponse, DocumentMetadata, etc.) — single source of truth for all wire shapes. |
 | `SignalRQueueDemo.Web` | Blazor Server frontend (template default today; becomes the three Blazor experiences in later work). |
@@ -146,7 +162,7 @@ aspire run
 # or: dotnet run --project SignalRQueueDemo.AppHost
 ```
 
-Opens the Aspire dashboard with the API service and Blazor Web app (Blazor is still template defaults; real-time queue features land per the implementation plan).
+Opens the Aspire dashboard with the API service, the Blazor Web app (still template defaults; real-time queue features land per the implementation plan), the Azurite storage emulator, and all three Angular apps as Docker containers (`public-checkin`, `internal-queue`, `queue-display` — see [Containers](#containers-the-angular-apps) above). The first `aspire run` in a fresh checkout takes longer than later ones: Docker has to build all three container images from scratch (`npm ci` + Angular compile, a few minutes total); every run after that reuses Docker's layer cache and only rebuilds what changed. Each Angular container's URL is shown in the Aspire dashboard's resource list — open any of the three to load that app in a browser; there is no fixed port to remember (unlike the dev-server ports below), since Aspire assigns each container's externally-reachable port at startup.
 
 ### Flipping the persistence provider
 

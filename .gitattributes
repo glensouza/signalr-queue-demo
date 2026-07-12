@@ -1,0 +1,5 @@
+# Shell scripts must keep LF line endings even when checked out on Windows (this repo's git config has
+# core.autocrlf=true). A CRLF shebang line (`#!/bin/sh\r`) breaks the Linux container it's copied into with
+# "bad interpreter: No such file or directory" -- see SignalRQueueDemo.Angular/docker/write-runtime-config.sh,
+# which is COPYed verbatim into the nginx:alpine image by SignalRQueueDemo.Angular/Dockerfile.
+*.sh text eol=lf

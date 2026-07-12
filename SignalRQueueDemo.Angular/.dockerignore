@@ -1,0 +1,12 @@
+# Keeps the Docker build context (this SignalRQueueDemo.Angular/ folder) small and reproducible -- without this,
+# `docker build` would upload the host's node_modules (installed for local dev, wrong/stale relative to `npm ci`
+# inside the image) and any previous dist/ output to the daemon before the build even starts.
+node_modules
+dist
+.angular
+
+# IDE/editor and VCS metadata -- never relevant inside the image, no reason to spend context-upload time on it.
+.vscode
+.git
+.gitignore
+*.md
