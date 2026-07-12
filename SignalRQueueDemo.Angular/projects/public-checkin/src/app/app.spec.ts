@@ -12,13 +12,14 @@ describe('App', () => {
     }).compileComponents();
   });
 
-  // Deliberately never calls fixture.detectChanges(): that would run ngOnInit, which calls
-  // QueueHubService.start() and fires real HTTP/APP_INITIALIZER machinery this shell-level test isn't set up to
-  // flush. Creating the component alone is still a meaningful smoke test — it exercises the full
-  // App -> QueueHubService -> QueueApiService -> RuntimeConfigService -> HttpClient provider chain, which is
-  // exactly the wiring issue #8 needs proven correct.
-  it('should create the app', () => {
+  // Deliberately does not call fixture.detectChanges(): that would run ngOnInit, which starts QueueHubService
+  // (real HTTP seed + a SignalR connection attempt) and the child form's provider chain — machinery this
+  // shell-level test isn't set up to flush. Creating the component and asserting its initial phase still
+  // exercises the App -> shared-service provider wiring and confirms the kiosk starts on the check-in form.
+  it('starts on the check-in form (no check-in result yet)', () => {
     const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as unknown as { checkInResult: () => unknown };
     expect(fixture.componentInstance).toBeTruthy();
+    expect(app.checkInResult()).toBeNull();
   });
 });

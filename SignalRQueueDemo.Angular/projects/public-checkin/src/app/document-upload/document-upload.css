@@ -1,0 +1,64 @@
+/* Minimal, touch-friendly — same rationale as the check-in form's styles. */
+.document-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  border: 2px dashed #b0b0b0;
+  border-radius: 0.75rem;
+}
+
+.document-upload h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.hint {
+  margin: 0;
+  color: #555;
+}
+
+.upload-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3.5rem;
+  padding: 0 1.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1a5fb4;
+  background: #eaf1fb;
+  border: 2px solid #1a5fb4;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.upload-button.disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Hide the native <input type="file"> while keeping it focusable/operable via its wrapping <label>. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.error {
+  margin: 0;
+  color: #a51d2d;
+}
+
+.uploaded-list {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  color: #26734d;
+  font-size: 1.15rem;
+}

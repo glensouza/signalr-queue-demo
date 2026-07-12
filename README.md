@@ -124,7 +124,7 @@ Work is executed as an ordered, dependency-aware backlog of 14 work items, each 
 
 ## Current repo status
 
-.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository`, now with two swappable backends, plus document upload/viewing behind `IDocumentRepository` and `DocumentBlobStore`. The Angular workspace (`SignalRQueueDemo.Angular/`) has its `shared` library and three app shells built (#8) — see [Angular workspace](#3-angular-workspace-signalrqueuedemoangular--three-apps-one-shared-library) above. The Blazor `Web` project and the three real Angular app UIs (#9-#11) are still template/not-yet-built — they are built in later work items.
+.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository`, now with two swappable backends, plus document upload/viewing behind `IDocumentRepository` and `DocumentBlobStore`. The Angular workspace (`SignalRQueueDemo.Angular/`) has its `shared` library and three app shells built (#8), and the first real app — `public-checkin`, the kiosk check-in + live-position + document-upload UI (#9) — is built on top of it; see [Angular workspace](#3-angular-workspace-signalrqueuedemoangular--three-apps-one-shared-library) above. The Blazor `Web` project and the other two Angular app UIs (`internal-queue` #10, `queue-display` #11) are still shells/not-yet-built — they are built in later work items.
 
 | Project / path | Purpose |
 |---|---|
@@ -213,6 +213,25 @@ throwaway `dotnet run` console app using `Microsoft.AspNetCore.SignalR.Client` (
 5. Reconnect the client. It receives a fresh `CurrentSequence` (now `N + 3`), proving live push alone would have skipped the two changes made while it was offline.
 6. Call `GET /queue/since/{N + 1}` (edit `@sinceSeq` in the `.http` file). Confirm the response has `isSnapshot: false` and `changes` contains **exactly** the two missed events (call-next then complete, in that order) — this is the acceptance criterion for the reconnect/catch-up protocol.
 7. Optional — exercise the snapshot fallback: call `GET /queue/since/999999` (an unrecognized/future sequence number). Confirm the response has `isSnapshot: true` with a full `snapshot` instead of `changes`.
+
+### Running the public-checkin kiosk (Angular)
+
+The `public-checkin` app is the visitor-facing kiosk: a check-in form, a live "you are #N in line" screen, and optional document upload — all consuming the same API and the shared `QueueHubService`. Run the API first (`aspire run`, or `dotnet run --project SignalRQueueDemo.ApiService` on `http://localhost:5410`), then from `SignalRQueueDemo.Angular/`:
+
+```
+npm ci
+npm run start:public-checkin   # serves on http://localhost:4200
+```
+
+The API's `Cors:AllowedOrigins` already lists `http://localhost:4200`, so the browser calls and the hub connection are allowed. Manual test script:
+
+1. Open `http://localhost:4200`. The check-in form shows a name field and a pre-filled, editable fake ticket number (e.g. `A-042`). Enter a fake name ("Jane Test") and submit.
+2. The view switches to the live position screen ("You're checked in — #N in line"). N is derived from the authoritative queue snapshot, not the one-shot check-in response, so it stays correct as the queue moves.
+3. From the `.http` file (or a second tool), run `POST /queue/call-next` repeatedly. Watch the kiosk's position count down **live** over SignalR — no refresh. When this visitor's own entry is called, the screen switches to "It's your turn"; when it's completed (`POST /queue/{id}/complete`), it switches to "Thank you" and auto-resets to a blank form after a short visible countdown.
+4. **Document upload:** before completion, use "Choose file" to attach a PDF/JPEG/PNG (≤10 MB). A wrong type or oversized file is rejected instantly client-side (the same rules the server enforces — see [Uploading and viewing documents](#uploading-and-viewing-documents)); a valid file uploads and appears in the "attached" list. Confirm it landed with `GET /queue/{entryId}/documents` (staff-gated).
+5. **Reconnect/catch-up (acceptance criterion):** while on the position screen, open DevTools → Network → set **Offline**. Run a `POST /queue/call-next` or two against the API. Set the network back to **Online** — the kiosk reconnects and the position corrects itself to the changes it missed while offline (a brief "Reconnecting… your place is still saved" note appears while it's degraded). This exercises the shared `QueueHubService`'s catch-up path end-to-end from a real browser.
+
+Only one Angular app can be served at a time locally (they share port 4200) — see [`SignalRQueueDemo.Angular/README.md`](SignalRQueueDemo.Angular/README.md).
 
 ## Angular vs. Blazor comparison
 

@@ -1,0 +1,37 @@
+<form class="check-in-form" (submit)="$event.preventDefault(); submit()">
+  <h1>Check in</h1>
+  <p class="lede">Enter your name to join the queue.</p>
+
+  <label class="field">
+    <span class="field-label">Your name</span>
+    <input
+      class="field-input"
+      type="text"
+      autocomplete="off"
+      autocapitalize="words"
+      [value]="displayName()"
+      (input)="onDisplayNameInput($event)"
+      [disabled]="submitting()"
+    />
+  </label>
+
+  <label class="field">
+    <span class="field-label">Ticket number</span>
+    <input
+      class="field-input"
+      type="text"
+      autocomplete="off"
+      [value]="ticketNumber()"
+      (input)="onTicketNumberInput($event)"
+      [disabled]="submitting()"
+    />
+  </label>
+
+  @if (error(); as message) {
+    <p class="error" role="alert">{{ message }}</p>
+  }
+
+  <button class="primary-button" type="submit" [disabled]="submitting()">
+    {{ submitting() ? 'Checking in…' : 'Check in' }}
+  </button>
+</form>

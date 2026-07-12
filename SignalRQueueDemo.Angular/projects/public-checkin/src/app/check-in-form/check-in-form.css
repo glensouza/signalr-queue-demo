@@ -1,0 +1,44 @@
+/* Kiosk-friendly: large touch targets, generous spacing, one column. Styling is deliberately minimal — the POC
+   compares plumbing (Angular vs. Blazor), not visual polish. */
+.check-in-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.lede {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #555;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.field-label {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+/* min-height 3.5rem keeps every input a comfortable touch target on a kiosk screen. */
+.field-input {
+  min-height: 3.5rem;
+  padding: 0 1rem;
+  font-size: 1.5rem;
+  border: 2px solid #b0b0b0;
+  border-radius: 0.5rem;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: #1a5fb4;
+}
+
+.error {
+  margin: 0;
+  font-size: 1.15rem;
+  color: #a51d2d;
+}

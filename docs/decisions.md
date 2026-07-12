@@ -230,3 +230,21 @@ One dated entry per architecture/implementation decision made along the way — 
 **Why:** #12's plan (see that issue) has an nginx entrypoint script overwrite `config.json` from an environment variable at container *start* — after Aspire has assigned the API's actual address, which isn't known at `docker build` time. A build-time `environment.ts` value would freeze in an address before it exists, making the container image environment-specific (a fresh image per environment) instead of one image deployable anywhere with different runtime config — exactly the problem #12's task list calls out ("build-time baking would break service discovery").
 
 **Rejected:** Angular's `fileReplacements`/`environment.ts` pattern — the standard approach for most Angular apps, wrong here specifically because of the container/service-discovery timing constraint above; picking it now would have meant redoing this in #12 anyway.
+
+## 2026-07-11 — public-checkin: live position from the snapshot, token policy app-local, upload validation mirrored client-side
+
+**Context:** #9 is the first real Angular UI on top of the #8 shared library — the visitor kiosk (check in → live "you are #N in line" → optional document upload). Three choices came up that the sibling apps (#10/#11) will inherit the pattern from.
+
+**Decision 1 — position is derived from the `QueueHubService` snapshot, not the `POST /checkin` response.** `PositionView` recomputes the visitor's 1-based place among still-`Waiting` entries (ordered by parsed check-in time) from the authoritative snapshot on every live push / catch-up / poll. The check-in response's one-shot `position` is used only as a seed for the brief window before the snapshot first contains the new entry.
+
+**Why:** the response position is correct only at the instant of check-in; people ahead get served while the visitor waits. Binding to the snapshot is what makes "position updates live when staff calls next" (the issue's acceptance criterion) fall out for free — and it's what exercises the shared reconnect/catch-up path from a real browser. Sorting locally (rather than trusting queue array order) is deliberate: a catch-up-*derived* snapshot doesn't guarantee server order (see `QueueHubService`'s remarks), so the component orders by `checkedInAt` itself.
+
+**Decision 2 — the check-in-token flow lives in an app-local `KioskCheckInService`, not in the shared `QueueApiService`.** The shared client takes the token per call and stays out of *when* one is fetched or held (see its class doc). public-checkin's policy — fetch a fresh token immediately before each gated call (check-in, upload), never cache — is encoded once in this app-local service.
+
+**Why:** how long a token is held is a UI-flow concern that differs per app (internal-queue #10 will hold a staff key for a whole session; public-checkin holds nothing). Server tokens are short-lived (5 min) and a kiosk sits idle between visitors, so a cached token risks being expired at use; re-fetching costs one cheap round-trip and removes a whole class of "expired mid-flow" failure. Putting this in `shared` would force one token policy on all three apps.
+
+**Decision 3 — upload type/size validation is duplicated client-side, mirroring the server.** `DocumentUpload` carries the same allowlist (`application/pdf`, `image/jpeg`, `image/png`) and 10 MB cap as `DocumentEndpoints`, each constant naming the server symbol it shadows.
+
+**Why:** the server stays the source of truth (it re-validates every upload); the client copy exists only so a visitor gets an instant, in-place rejection instead of picking a file, waiting for an upload, and getting a round-trip 400. The duplication is accepted (not abstracted into a shared constant) because the two live in different languages/deploy units and the server must own the real limit regardless — naming the shadowed symbol in a comment is the chosen "keep them in sync" mechanism, matching how the TypeScript `Contracts` mirrors are kept in step.
+
+**Rejected:** trusting `POST /checkin`'s position for the whole session (goes stale immediately); a shared token-holding service (imposes one app's flow on all three); skipping client-side upload validation and relying on the server 400 (a worse kiosk experience for the common "wrong file" mistake).

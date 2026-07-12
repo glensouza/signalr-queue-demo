@@ -1,16 +1,7 @@
-<main class="smoke-page">
-  <h1>public-checkin</h1>
-  <p>Shell only — the kiosk check-in UI lands in issue #9. This page proves <code>QueueHubService</code> is wired up.</p>
-
-  <p>Connection state: <strong>{{ hub.connectionState() }}</strong></p>
-
-  @if (hub.snapshot(); as snapshot) {
-    <p>Waiting: {{ snapshot.totalWaiting }} · Serving: {{ snapshot.totalServing }} · Completed: {{ snapshot.totalCompleted }}</p>
+<main class="kiosk">
+  @if (checkInResult(); as result) {
+    <app-position-view [checkIn]="result" (finished)="onFinished()" />
   } @else {
-    <p>Loading queue state…</p>
-  }
-
-  @if (hub.lastUpdate(); as update) {
-    <p>Last live QueueUpdated: seq {{ update.sequenceNumber }}, entry {{ update.changedEntry.ticketNumber }}</p>
+    <app-check-in-form (checkedIn)="onCheckedIn($event)" />
   }
 </main>

@@ -1,0 +1,29 @@
+<section class="document-upload">
+  <h2>Add a document (optional)</h2>
+  <p class="hint">PDF, JPEG, or PNG, up to 10&nbsp;MB.</p>
+
+  <!-- A styled <label> wrapping a visually-hidden <input type="file"> gives a big, kiosk-friendly touch target
+       while still using the native file picker (no custom drag-drop plumbing this POC doesn't need). -->
+  <label class="upload-button" [class.disabled]="uploading()">
+    {{ uploading() ? 'Uploading…' : 'Choose file' }}
+    <input
+      class="visually-hidden"
+      type="file"
+      [accept]="acceptAttribute"
+      [disabled]="uploading()"
+      (change)="onFileSelected($event)"
+    />
+  </label>
+
+  @if (error(); as message) {
+    <p class="error" role="alert">{{ message }}</p>
+  }
+
+  @if (uploaded().length > 0) {
+    <ul class="uploaded-list">
+      @for (name of uploaded(); track $index) {
+        <li>✓ {{ name }}</li>
+      }
+    </ul>
+  }
+</section>

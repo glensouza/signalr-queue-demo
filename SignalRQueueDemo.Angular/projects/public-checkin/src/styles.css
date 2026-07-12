@@ -1,1 +1,21 @@
-/* You can add global styles to this file, and also import other style files */
+/* Global base for the kiosk. Minimal on purpose (the POC compares plumbing, not polish) but tuned for a
+   touch/kiosk context: a larger base font and full-height background so the single centered column sits on a
+   clean surface on any screen. */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  font-size: 18px;
+  color: #1b1b1b;
+  background: #f6f6f6;
+}

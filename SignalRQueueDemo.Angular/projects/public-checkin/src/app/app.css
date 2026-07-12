@@ -1,5 +1,7 @@
-.smoke-page {
-  font-family: system-ui, sans-serif;
-  padding: 2rem;
-  max-width: 40rem;
+/* Centered single column with a comfortable max width — reads well on a phone (a visitor's own device) and on a
+   full-screen lobby kiosk alike. No assumptions about browser chrome, per issue #9. */
+.kiosk {
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
 }
