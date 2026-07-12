@@ -189,7 +189,7 @@ Models the internal-vs-public trust boundary from ADR-0001 — **honestly docume
 
 **Public check-in path** (`POST /checkin`, `POST /checkin/{id}/documents`) — a short-lived, stateless token (no server-side session or token store): `GET /checkin/token` issues an HMAC-signed, 5-minute token (`CheckInTokenService`, returned with `Cache-Control: no-store`); the kiosk echoes it back on `X-CheckIn-Token`. `POST /checkin` validates it via `CheckInTokenFilter`; the document upload validates it inline *before* it reads any of the multipart body, so an unauthenticated upload is rejected without the server buffering the file. Chosen over ASP.NET Core's built-in cookie-based antiforgery system because a public kiosk SPA on a different origin can't be assumed to carry a same-site cookie (see `docs/decisions.md`).
 
-**Restricted CORS** (`Cors:AllowedOrigins` in config, policy `KnownFrontends`) — applied to **every browser-reachable surface**: the public *and* staff REST endpoints and the SignalR hub. Only listed origins can reach any of them from a browser. CORS is not the trust boundary (the staff key and check-in token are) — it's applied everywhere, including staff endpoints and the hub, precisely so the legitimate cross-origin frontends (all three Angular apps depend on the hub for live updates; `internal-queue` calls the staff endpoints) aren't refused by the browser before those real checks run, while an unlisted origin still is. The Angular apps don't exist as deployed origins yet (later work items), so this is seeded with the Angular CLI dev-server's default port (`http://localhost:4200`) as a placeholder. Missing `StaffAuth:Key` or `CheckInToken:SigningKey` fails the app at **startup**, not on the first request.
+**Restricted CORS** (`Cors:AllowedOrigins` in config, policy `KnownFrontends`) — applied to **every browser-reachable surface**: the public *and* staff REST endpoints and the SignalR hub. Only listed origins can reach any of them from a browser. CORS is not the trust boundary (the staff key and check-in token are) — it's applied everywhere, including staff endpoints and the hub, precisely so the legitimate cross-origin frontends (all three Angular apps depend on the hub for live updates; `internal-queue` calls the staff endpoints) aren't refused by the browser before those real checks run, while an unlisted origin still is. The Angular apps don't exist as deployed origins yet (later work items), so this is seeded with their local dev-server ports (`http://localhost:4200`–`4202`, one per app so all three can run at once) as a placeholder. Missing `StaffAuth:Key` or `CheckInToken:SigningKey` fails the app at **startup**, not on the first request.
 
 **Stated honestly — what this doesn't do:** a public SPA cannot hold a secret a determined attacker can't also read, so the check-in token proves "this caller fetched a token recently," not "this caller is the real kiosk app." CORS stops browser-mediated cross-origin abuse, not a direct `curl`/script request with a forged `Origin` header. Both raise the bar against drive-by scripted abuse; neither is authentication. `GET /queue` and `GET /queue/since/{sequenceNumber}` are read-only and CORS-restricted but carry no token requirement, matching the anti-forgery-style pattern's usual scope of protecting writes, not reads.
 
@@ -231,7 +231,7 @@ The API's `Cors:AllowedOrigins` already lists `http://localhost:4200`, so the br
 4. **Document upload:** before completion, use "Choose file" to attach a PDF/JPEG/PNG (≤10 MB). A wrong type or oversized file is rejected instantly client-side (the same rules the server enforces — see [Uploading and viewing documents](#uploading-and-viewing-documents)); a valid file uploads and appears in the "attached" list. Confirm it landed with `GET /queue/{entryId}/documents` (staff-gated).
 5. **Reconnect/catch-up (acceptance criterion):** while on the position screen, open DevTools → Network → set **Offline**. Run a `POST /queue/call-next` or two against the API. Set the network back to **Online** — the kiosk reconnects and the position corrects itself to the changes it missed while offline (a brief "Reconnecting… your place is still saved" note appears while it's degraded). This exercises the shared `QueueHubService`'s catch-up path end-to-end from a real browser.
 
-Only one Angular app can be served at a time locally (they share port 4200) — see [`SignalRQueueDemo.Angular/README.md`](SignalRQueueDemo.Angular/README.md).
+Each Angular app has its own fixed dev-server port (`public-checkin` → 4200, `internal-queue` → 4201, `queue-display` → 4202), so you can run all three at once in separate terminals and watch a check-in on the kiosk ripple to the staff console and the public board live — see [`SignalRQueueDemo.Angular/README.md`](SignalRQueueDemo.Angular/README.md).
 
 ### Running the internal-queue staff console (Angular)
 
@@ -239,12 +239,12 @@ The `internal-queue` app is the staff queue management console: mock-authenticat
 
 ```
 npm ci
-npm run start:internal-queue    # serves on http://localhost:4200
+npm run start:internal-queue    # serves on http://localhost:4201
 ```
 
-The API's `Cors:AllowedOrigins` already lists `http://localhost:4200`, so the browser calls and the hub connection are allowed. Manual test script:
+The API's `Cors:AllowedOrigins` already lists `http://localhost:4201`, so the browser calls and the hub connection are allowed. Manual test script:
 
-1. Open `http://localhost:4200`. The staff sign-in form asks for a staff key. Enter the value from the `@staffKey` variable in `SignalRQueueDemo.ApiService/SignalRQueueDemo.ApiService.http` (the `StaffAuth:Key` placeholder in `appsettings.json`; it defaults to a simple test string).
+1. Open `http://localhost:4201`. The staff sign-in form asks for a staff key. Enter the value from the `@staffKey` variable in `SignalRQueueDemo.ApiService/SignalRQueueDemo.ApiService.http` (the `StaffAuth:Key` placeholder in `appsettings.json`; it defaults to a simple test string).
 2. The view switches to the live queue console. The left side shows "Now Serving" (the entry currently being served, or empty), the right side shows "Waiting" with the seeded entries ("Jane Test" / A-042, "Sam Sample" / A-043) sorted by check-in time.
 3. From the `.http` file (or a second tool), run `POST /checkin` to add a new entry to the waiting list. Watch the staff console update **live** over SignalR — no refresh needed. The new entry appears in the Waiting list in the correct position.
 4. Click "Call Next" on the console. Watch the oldest Waiting entry move to Serving **live** — the left side now shows who is being served and which staff member called them (`servedBy` — this internal-only detail models the staff context vs. the privacy-conscious public board).
@@ -259,12 +259,12 @@ The `queue-display` app is the public waiting-room board: a full-screen read-onl
 
 ```
 npm ci
-npm run start:queue-display    # serves on http://localhost:4200
+npm run start:queue-display    # serves on http://localhost:4202
 ```
 
-The API's `Cors:AllowedOrigins` already lists `http://localhost:4200`, so the browser calls and the hub connection are allowed. Manual test script:
+The API's `Cors:AllowedOrigins` already lists `http://localhost:4202`, so the browser calls and the hub connection are allowed. Manual test script:
 
-1. Open `http://localhost:4200`. The board initially shows "Now Serving" (empty initially) on the left and "Waiting" with the seeded entries ("Jane Test" / A-042, "Sam Sample" / A-043) on the right, sorted by check-in time.
+1. Open `http://localhost:4202`. The board initially shows "Now Serving" (empty initially) on the left and "Waiting" with the seeded entries ("Jane Test" / A-042, "Sam Sample" / A-043) on the right, sorted by check-in time.
 2. From the `.http` file (or a second tool), run `POST /checkin` to add a new entry to the waiting list. Watch the board update **live** over SignalR — no refresh needed.
 3. Run `POST /queue/call-next` to move the oldest waiting entry to "Now Serving". Watch the board reorganize in real time — the entry moves from the "Waiting" list to the "Now Serving" section.
 4. Call `POST /queue/{id}/complete` on a serving entry. It immediately disappears from the board (Completed entries are never displayed).

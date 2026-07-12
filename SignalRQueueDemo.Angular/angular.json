@@ -86,7 +86,10 @@
               "buildTarget": "public-checkin:build:development"
             }
           },
-          "defaultConfiguration": "development"
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4200
+          }
         },
         "test": {
           "builder": "@angular/build:unit-test"
@@ -147,7 +150,10 @@
               "buildTarget": "internal-queue:build:development"
             }
           },
-          "defaultConfiguration": "development"
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4201
+          }
         },
         "test": {
           "builder": "@angular/build:unit-test"
@@ -208,7 +214,10 @@
               "buildTarget": "queue-display:build:development"
             }
           },
-          "defaultConfiguration": "development"
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4202
+          }
         },
         "test": {
           "builder": "@angular/build:unit-test"

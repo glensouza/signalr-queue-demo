@@ -96,9 +96,15 @@ npm ci
 npm run start:public-checkin    # or start:internal-queue / start:queue-display
 ```
 
-Each `start:*` script builds `shared` in development mode first (apps import it via the `shared` TypeScript path mapping to `dist/shared` — see `tsconfig.json` — so `shared` must be built, not just source-present, before an app can compile against it), then runs `ng serve` for that one app on `http://localhost:4200`. Only run one app at a time locally — they'd otherwise collide on the same dev-server port.
+Each `start:*` script builds `shared` in development mode first (apps import it via the `shared` TypeScript path mapping to `dist/shared` — see `tsconfig.json` — so `shared` must be built, not just source-present, before an app can compile against it), then runs `ng serve` for that one app. Each app has its own fixed dev-server port (set per app under `serve.options.port` in `angular.json`), so **all three can run at once** in separate terminals — a realistic setup since the kiosk, the staff console, and the public board are meant to be seen side by side:
 
-The API's `Cors:AllowedOrigins` (`SignalRQueueDemo.ApiService/appsettings.json`) is seeded with `http://localhost:4200` for exactly this reason — see the root README's Security model section for why CORS is applied to every browser-reachable surface, including the SignalR hub.
+| App | Command | URL |
+|---|---|---|
+| `public-checkin` | `npm run start:public-checkin` | `http://localhost:4200` |
+| `internal-queue` | `npm run start:internal-queue` | `http://localhost:4201` |
+| `queue-display` | `npm run start:queue-display` | `http://localhost:4202` |
+
+The API's `Cors:AllowedOrigins` (`SignalRQueueDemo.ApiService/appsettings.json`) lists all three (`http://localhost:4200`–`4202`) for exactly this reason — see the root README's Security model section for why CORS is applied to every browser-reachable surface, including the SignalR hub.
 
 ## Building the whole workspace
 
