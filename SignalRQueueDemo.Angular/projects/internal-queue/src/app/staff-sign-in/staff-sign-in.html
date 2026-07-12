@@ -8,14 +8,23 @@
       class="field-input"
       type="password"
       autocomplete="off"
+      placeholder="Enter your staff key"
       [value]="staffKey()"
+      [disabled]="verifying()"
       (input)="onStaffKeyInput($event)"
     />
   </label>
+
+  <!-- POC hint: this mock auth has no identity provider — the accepted key is the StaffAuth:Key placeholder in
+       SignalRQueueDemo.ApiService/appsettings.json (a real deployment replaces the whole StaffAuthFilter with
+       Entra ID). Naming where the value lives, not the value itself, so a rotated key doesn't strand this text. -->
+  <p class="hint">POC only: use the <code>StaffAuth:Key</code> value from <code>appsettings.json</code>.</p>
 
   @if (error(); as message) {
     <p class="error" role="alert">{{ message }}</p>
   }
 
-  <button class="primary-button" type="submit">Sign in</button>
+  <button class="primary-button" type="submit" [disabled]="verifying()">
+    {{ verifying() ? 'Verifying…' : 'Sign in' }}
+  </button>
 </form>

@@ -47,6 +47,19 @@ export class QueueApiService {
     });
   }
 
+  /**
+   * GET /staff/verify — succeeds (204) if `staffKey` matches `StaffAuth:Key`, errors with 401 otherwise. Lets the
+   * internal-queue sign-in screen reject a wrong key immediately rather than storing it and failing on the first
+   * real staff action. Read-only and side-effect-free — it only exercises the same {@link StaffAuthFilter} the
+   * mutating staff endpoints do. Emits once (void) on success; the caller distinguishes a 401 (wrong key) from
+   * other failures (e.g. API unreachable) via the {@link HttpErrorResponse} status.
+   */
+  verifyStaffKey(staffKey: string): Observable<void> {
+    return this.httpClient.get<void>(`${this.baseUrl}/staff/verify`, {
+      headers: { [STAFF_KEY_HEADER]: staffKey },
+    });
+  }
+
   /** POST /queue/call-next — moves the oldest Waiting entry to Serving. `staffKey` must match `StaffAuth:Key`. */
   callNext(staffKey: string): Observable<QueueUpdated> {
     return this.httpClient.post<QueueUpdated>(

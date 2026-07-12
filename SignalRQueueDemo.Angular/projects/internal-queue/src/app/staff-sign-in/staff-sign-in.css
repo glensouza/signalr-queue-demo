@@ -42,3 +42,24 @@
   font-size: 1.15rem;
   color: #a51d2d;
 }
+
+/* POC affordance, not chrome for a real staff screen: points the demo user at where the accepted key lives. */
+.hint {
+  margin: -0.75rem 0 0;
+  font-size: 1rem;
+  color: #666;
+}
+
+.hint code {
+  padding: 0.1rem 0.3rem;
+  font-size: 0.9em;
+  background: #efefef;
+  border-radius: 0.25rem;
+}
+
+/* Dim the disabled input/button while a verify round-trip is in flight, so the form reads as busy. */
+.field-input:disabled,
+.primary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

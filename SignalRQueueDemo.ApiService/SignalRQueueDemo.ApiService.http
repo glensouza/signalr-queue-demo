@@ -34,6 +34,13 @@ X-CheckIn-Token: {{checkInToken}}
 
 ###
 
+### Verify a staff key without any side effect. 204 if it matches, 401 ProblemDetails otherwise. The internal-queue
+### sign-in screen calls this so a wrong key is rejected at sign-in instead of on the first call-next/complete.
+GET {{ApiService_HostAddress}}/staff/verify
+X-Staff-Key: {{staffKey}}
+
+###
+
 ### Call the oldest Waiting entry to Serving. Returns 409 Conflict if nobody is Waiting. Staff-only: requires
 ### X-Staff-Key; omitting it or sending the wrong value returns 401 ProblemDetails from StaffAuthFilter.
 POST {{ApiService_HostAddress}}/queue/call-next

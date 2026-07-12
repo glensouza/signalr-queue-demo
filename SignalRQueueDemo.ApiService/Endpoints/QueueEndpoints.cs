@@ -14,7 +14,7 @@ public static class QueueEndpoints
 {
   /// <summary>
   /// Registers GET /checkin/token, POST /checkin, POST /queue/call-next, POST /queue/{id}/complete,
-  /// GET /queue, and GET /queue/since/{seq}.
+  /// GET /queue, GET /queue/since/{seq}, and GET /staff/verify.
   ///
   /// <para>
   /// Every route gets the <see cref="CorsPolicies.KnownFrontends"/> policy — the staff routes need it just as
@@ -36,6 +36,16 @@ public static class QueueEndpoints
       .RequireCors(CorsPolicies.KnownFrontends)
       .AddEndpointFilter<StaffAuthFilter>();
     app.MapPost("/queue/{id}/complete", HandleCompleteAsync)
+      .RequireCors(CorsPolicies.KnownFrontends)
+      .AddEndpointFilter<StaffAuthFilter>();
+    // A read-only "is this staff key valid?" probe, gated by the same StaffAuthFilter as the real staff actions.
+    // It exists so the internal-queue sign-in screen can reject a wrong key up front instead of silently accepting
+    // any non-empty string and only surfacing the 401 on the first call-next/complete/document view. The filter
+    // does all the work — a valid key falls through to a 204, a missing/wrong one is turned away with the same 401
+    // ProblemDetails as everywhere else, so the client has exactly one code path to interpret. Deliberately carries
+    // no body and mutates nothing: it models "validate credentials", not a session grant (this mock auth has no
+    // server-side session — see StaffAuthFilter).
+    app.MapGet("/staff/verify", () => Results.NoContent())
       .RequireCors(CorsPolicies.KnownFrontends)
       .AddEndpointFilter<StaffAuthFilter>();
     app.MapGet("/queue", HandleGetQueueAsync)
