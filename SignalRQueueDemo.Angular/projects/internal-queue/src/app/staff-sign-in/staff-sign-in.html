@@ -1,0 +1,21 @@
+<form class="staff-sign-in" (submit)="$event.preventDefault(); submit()">
+  <h1>Staff Console</h1>
+  <p class="lede">Enter your staff key to access the queue management system.</p>
+
+  <label class="field">
+    <span class="field-label">Staff key</span>
+    <input
+      class="field-input"
+      type="password"
+      autocomplete="off"
+      [value]="staffKey()"
+      (input)="onStaffKeyInput($event)"
+    />
+  </label>
+
+  @if (error(); as message) {
+    <p class="error" role="alert">{{ message }}</p>
+  }
+
+  <button class="primary-button" type="submit">Sign in</button>
+</form>

@@ -8,10 +8,10 @@ Three standalone Angular apps sharing one library, all talking to `SignalRQueueD
 |---|---|---|---|
 | `shared` | `projects/shared` | library | TypeScript mirrors of `SignalRQueueDemo.Contracts`, the runtime-config loader, `QueueApiService` (REST client), and `QueueHubService` (SignalR + reconnect catch-up + polling fallback). All three apps below depend on it. |
 | `public-checkin` | `projects/public-checkin` | application | Kiosk check-in + document upload + live position (#9). **Built** — see [The `public-checkin` app](#the-public-checkin-app) below. |
-| `internal-queue` | `projects/internal-queue` | application | Staff call-next console + document viewing (#10). Shell only today. |
-| `queue-display` | `projects/queue-display` | application | Public waiting-room board (#11). Shell only today. |
+| `internal-queue` | `projects/internal-queue` | application | Staff call-next console + live queue + document viewing (#10). **Built** — see [The `internal-queue` app](#the-internal-queue-app) below. |
+| `queue-display` | `projects/queue-display` | application | Public waiting-room board (#11). **Built** — see [The `queue-display` app](#the-queue-display-app) below. |
 
-`public-checkin` is a real app now (see below); `internal-queue` and `queue-display` still ship only a "shell" page (see `src/app/app.ts`/`app.html` in each) that starts `QueueHubService` and shows live connection state + queue counts — enough to prove the shared plumbing works end-to-end against a running API. Their real UIs land in #10/#11.
+All three apps are real now (see below).
 
 ## The `public-checkin` app
 
@@ -30,6 +30,40 @@ The visitor-facing kiosk: check in, watch your live place in line, optionally at
 **Client-side upload validation mirrors the server on purpose.** The allowed content types (`application/pdf`, `image/jpeg`, `image/png`) and 10 MB cap in `DocumentUpload` duplicate `DocumentEndpoints` on the API. The server stays the source of truth (it re-validates every upload); the client copy exists only so a visitor gets an instant, in-place rejection instead of a round-trip 400. Each constant names the server symbol it shadows so the two are easy to keep in step.
 
 See the root [`README.md`](../README.md#running-the-public-checkin-kiosk-angular) for the end-to-end manual test script (including the offline reconnect/catch-up check).
+
+## The `internal-queue` app
+
+The staff queue management console: internally-facing, mock-authenticated with a static key (modeling Entra ID in production), lets staff call the next person in line, mark entries complete, and view supporting documents uploaded during check-in. Staff see names and `servedBy` display (internal context); the public board deliberately hides both (privacy boundary).
+
+**Component shape (pattern same as #9).** The app is a state machine plus focused child components, all standalone and signal-driven:
+
+- `App` — the shell/state machine. Holds one `staffKey` signal: null → show the sign-in form, non-null → show the console. Starts `QueueHubService` once, at the shell level, so the reconnect/catch-up machinery survives across the phase change.
+- `StaffSignIn` — simple form where staff enters their authentication key once. Stores it **in memory only** (not localStorage/sessionStorage) — a refresh returns to sign-in. This models the production Entra ID boundary and the mock-auth `X-Staff-Key` header; the server's `StaffAuthFilter` validates the key on every staff call.
+- `QueueConsole` — the live console. Two sections: Serving (current entries being served, with Complete button and staff member name) and Waiting (all waiting entries sorted by check-in time, position number shown). A "Call Next" button moves the oldest Waiting entry to Serving; all connected frontends see the change live via hub broadcast. Staff can select any entry (Waiting or Serving) to view its uploaded documents inline.
+- `DocumentViewer` — list of documents for a selected entry, with inline display (images in `<img>` tags, PDFs in an `<iframe>` with the browser's native viewer). Fetches documents as Blobs (because the `X-Staff-Key` header is required and a plain `<img src>`/`<a href>` can't carry it), builds object URLs via `URL.createObjectURL`, and **revokes them in three places to avoid memory leaks**: when selecting a different document, when the viewed entry changes, and in `ngOnDestroy`. This lifecycle discipline matters on a long-running staff console left open all day.
+- `StaffSessionService` — app-local service holding the staff key in memory for the session. Why here, not in `shared`: the in-memory-only policy is a UI-flow concern the shared `QueueApiService` stays out of. See the service's doc comment for the trust-boundary rationale.
+
+**Auth model:** the staff key is passed per-call to `QueueApiService` methods (`callNext`, `complete`, `listDocuments`, `getDocument`), not held as service state — the shared service deliberately takes it as a parameter so each app can decide its own policy (this app: in-memory-only; a real deployment: Entra ID token). On a staff action failing with `401` (wrong/expired key), the console emits an `authError` that the shell listens for and signs the user straight back out to the sign-in screen — the only recovery, since nothing works without a valid key. Any other (transient) failure surfaces as an inline retry message instead.
+
+**Queue state and live updates:** entirely derived from `QueueHubService`'s signals via `computed`, so the console stays in sync with live `QueueUpdated` pushes, catch-up after reconnect, and polling fallback. Staff see one additional data point (`servedBy`) compared to the public board, modeling the internal-vs-public trust boundary.
+
+See the root [`README.md`](../README.md#running-the-internal-queue-staff-console-angular) for the end-to-end manual test script.
+
+## The `queue-display` app
+
+The public waiting-room board: a full-screen TV display showing who is being served and who is still waiting, updated live from the hub. Displays only ticket numbers (never names) — a court privacy constraint. Designed for a public-facing monitor in a courthouse waiting room.
+
+**Component shape.** The app is minimal by design — the whole point is that `QueueHubService` handles reconnect/catch-up once, so this app just reads its signals and renders:
+
+- `App` — the shell. Starts `QueueHubService` once, passes the live snapshot and connection state to child components.
+- `NowServing` — filtered computed of entries with `status === QueueStatus.Serving`. Displays only the ticket number from each.
+- `WaitingList` — filtered-and-sorted computed of entries with `status === QueueStatus.Waiting`, sorted by check-in time ascending (oldest first). Displays position number and ticket number only — no names.
+
+**Why Completed entries don't appear.** They're naturally excluded by the Waiting + Serving filter; the board only ever shows entries currently in the queue. As soon as an entry moves to Completed, it vanishes.
+
+**No interaction.** This is a pure read-only board, no forms or user input. The only state changes come from the hub and are reflected automatically.
+
+See the root [`README.md`](../README.md#running-the-queue-display-board-angular) for the end-to-end manual test script.
 
 ## Why a shared library, not copy-paste
 

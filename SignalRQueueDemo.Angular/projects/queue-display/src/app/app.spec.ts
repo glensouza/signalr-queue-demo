@@ -13,10 +13,10 @@ describe('App', () => {
   });
 
   // Deliberately never calls fixture.detectChanges(): that would run ngOnInit, which calls
-  // QueueHubService.start() and fires real HTTP/APP_INITIALIZER machinery this shell-level test isn't set up to
-  // flush. Creating the component alone is still a meaningful smoke test — it exercises the full
-  // App -> QueueHubService -> QueueApiService -> RuntimeConfigService -> HttpClient provider chain, which is
-  // exactly the wiring issue #8 needs proven correct.
+  // QueueHubService.start() and fires real HTTP machinery this shell-level test isn't set up to flush. Creating
+  // the component alone is still a meaningful smoke test — it exercises the full
+  // App -> QueueHubService -> QueueApiService -> RuntimeConfigService -> HttpClient provider chain, plus the
+  // NowServing/WaitingList child imports, all of which must resolve for the board to bootstrap at all.
   it('should create the app', () => {
     const fixture = TestBed.createComponent(App);
     expect(fixture.componentInstance).toBeTruthy();

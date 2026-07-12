@@ -1,5 +1,60 @@
-.smoke-page {
-  font-family: system-ui, sans-serif;
+/* Full-screen waiting-room board. Minimal CSS on purpose (the POC compares plumbing, not polish), but tuned for
+   a large public display: high contrast, large readable type, full-screen coverage. */
+
+.board {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  background: #1b1b1b;
+  color: #ffffff;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.board-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  flex: 1;
   padding: 2rem;
-  max-width: 40rem;
+  overflow: hidden;
+}
+
+.now-serving-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.waiting-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 2rem;
+}
+
+.reconnecting-banner {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 165, 0, 0.2);
+  border: 1px solid rgba(255, 165, 0, 0.5);
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  color: #ffa500;
+}
+
+.reconnecting-banner p {
+  margin: 0;
 }

@@ -1,0 +1,14 @@
+<div class="now-serving">
+  <h2 class="section-title">Now Serving</h2>
+  <div class="entries">
+    @if (servingEntries().length === 0) {
+      <p class="empty-state">No one being served</p>
+    } @else {
+      @for (entry of servingEntries(); track entry.id) {
+        <div class="entry ticket-card">
+          <div class="ticket-number">{{ entry.ticketNumber }}</div>
+        </div>
+      }
+    }
+  </div>
+</div>

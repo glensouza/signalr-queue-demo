@@ -1,0 +1,49 @@
+<div class="document-viewer">
+  <div class="documents-panel">
+    <h3>Documents</h3>
+
+    @if (documents() === null) {
+      <p class="status">Loading documents…</p>
+    } @else if (documents()!.length === 0) {
+      <p class="status">No documents attached</p>
+    } @else {
+      <ul class="document-list">
+        @for (doc of documents()!; track doc.id) {
+          <li>
+            <button
+              class="document-item"
+              [class.selected]="selectedDocId() === doc.id"
+              (click)="selectDocument(doc.id)"
+              [disabled]="loading()"
+            >
+              <span class="doc-name">{{ doc.fileName }}</span>
+              <span class="doc-size">{{ formatFileSize(doc.sizeBytes) }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+    }
+
+    @if (error(); as message) {
+      <p class="error">{{ message }}</p>
+    }
+  </div>
+
+  @if (selectedObjectUrl(); as url) {
+    <div class="viewer-panel">
+      @if (selectedBlob()) {
+        @if (selectedIsPdf()) {
+          <!-- PDF: iframe src is a resource-URL context, so it binds the sanitizer-wrapped URL (see the component). -->
+          <iframe [src]="selectedSafeUrl()" class="pdf-viewer" title="Document preview"></iframe>
+        } @else {
+          <!-- Image (JPEG/PNG): img src is a plain URL context, so the raw blob: URL binds directly. -->
+          <img [src]="url" alt="Document preview" class="image-viewer" />
+        }
+      }
+
+      @if (loading()) {
+        <p class="status">Loading document…</p>
+      }
+    </div>
+  }
+</div>

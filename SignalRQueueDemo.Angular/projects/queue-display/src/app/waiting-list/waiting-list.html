@@ -1,0 +1,15 @@
+<div class="waiting-list">
+  <h2 class="section-title">Waiting</h2>
+  <div class="entries">
+    @if (waitingEntries().length === 0) {
+      <p class="empty-state">No one waiting</p>
+    } @else {
+      @for (entry of waitingEntries(); let position = $index; track entry.id) {
+        <div class="entry">
+          <div class="position">{{ position + 1 }}</div>
+          <div class="ticket-number">{{ entry.ticketNumber }}</div>
+        </div>
+      }
+    }
+  </div>
+</div>

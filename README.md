@@ -233,6 +233,45 @@ The API's `Cors:AllowedOrigins` already lists `http://localhost:4200`, so the br
 
 Only one Angular app can be served at a time locally (they share port 4200) — see [`SignalRQueueDemo.Angular/README.md`](SignalRQueueDemo.Angular/README.md).
 
+### Running the internal-queue staff console (Angular)
+
+The `internal-queue` app is the staff queue management console: mock-authenticated with a static key (modeling Entra ID production auth), lets staff call the next person in line, mark entries complete, and view supporting documents. Run the API first (`aspire run`, or `dotnet run --project SignalRQueueDemo.ApiService` on `http://localhost:5410`), then from `SignalRQueueDemo.Angular/`:
+
+```
+npm ci
+npm run start:internal-queue    # serves on http://localhost:4200
+```
+
+The API's `Cors:AllowedOrigins` already lists `http://localhost:4200`, so the browser calls and the hub connection are allowed. Manual test script:
+
+1. Open `http://localhost:4200`. The staff sign-in form asks for a staff key. Enter the value from the `@staffKey` variable in `SignalRQueueDemo.ApiService/SignalRQueueDemo.ApiService.http` (the `StaffAuth:Key` placeholder in `appsettings.json`; it defaults to a simple test string).
+2. The view switches to the live queue console. The left side shows "Now Serving" (the entry currently being served, or empty), the right side shows "Waiting" with the seeded entries ("Jane Test" / A-042, "Sam Sample" / A-043) sorted by check-in time.
+3. From the `.http` file (or a second tool), run `POST /checkin` to add a new entry to the waiting list. Watch the staff console update **live** over SignalR — no refresh needed. The new entry appears in the Waiting list in the correct position.
+4. Click "Call Next" on the console. Watch the oldest Waiting entry move to Serving **live** — the left side now shows who is being served and which staff member called them (`servedBy` — this internal-only detail models the staff context vs. the privacy-conscious public board).
+5. Click "View documents" on any entry (Waiting or Serving). A list panel appears on the left; if the entry has attached documents (e.g. you've run `POST /checkin/{entryId}/documents` from the `.http` file with a sample PDF), click one to view it inline. Images render in an `<img>` tag, PDFs in an `<iframe>` with the browser's native viewer. **Object URL lifecycle:** Selecting a different document revokes the previous one; changing entries does the same; closing the panel revokes any open URL. This discipline prevents memory leaks on a long-running staff console.
+6. Click "Complete" on a Serving entry. It immediately disappears from both the Serving and Waiting lists (Completed entries are excluded from the board). All connected frontends (another staff console, the public display board, any kiosk) see the change live.
+7. **Wrong staff key:** refresh to return to sign-in and enter a wrong key. Sign-in itself doesn't validate (there's no verify endpoint), but the first queue action (Call Next / Complete) gets a `401` and bounces you straight back to the sign-in screen. Enter the correct key — the console resumes normally. (Viewing documents with a bad key shows an inline "sign in again" message rather than bouncing, since that's a read, not a queue mutation.)
+8. **Reconnect/catch-up (acceptance criterion):** while viewing the console, open DevTools → Network → set **Offline**. Run `POST /checkin`, `POST /queue/call-next`, or `POST /queue/{id}/complete` against the API. Set the network back to **Online** — the console reconnects and the queue corrects itself to the changes it missed while offline (a "Reconnecting…" banner appears in the corner while degraded). This exercises the shared `QueueHubService`'s catch-up path end-to-end from a real browser.
+
+### Running the queue-display board (Angular)
+
+The `queue-display` app is the public waiting-room board: a full-screen read-only display of who is being served and who is still waiting, updated live via SignalR. Run the API first (`aspire run`, or `dotnet run --project SignalRQueueDemo.ApiService` on `http://localhost:5410`), then from `SignalRQueueDemo.Angular/`:
+
+```
+npm ci
+npm run start:queue-display    # serves on http://localhost:4200
+```
+
+The API's `Cors:AllowedOrigins` already lists `http://localhost:4200`, so the browser calls and the hub connection are allowed. Manual test script:
+
+1. Open `http://localhost:4200`. The board initially shows "Now Serving" (empty initially) on the left and "Waiting" with the seeded entries ("Jane Test" / A-042, "Sam Sample" / A-043) on the right, sorted by check-in time.
+2. From the `.http` file (or a second tool), run `POST /checkin` to add a new entry to the waiting list. Watch the board update **live** over SignalR — no refresh needed.
+3. Run `POST /queue/call-next` to move the oldest waiting entry to "Now Serving". Watch the board reorganize in real time — the entry moves from the "Waiting" list to the "Now Serving" section.
+4. Call `POST /queue/{id}/complete` on a serving entry. It immediately disappears from the board (Completed entries are never displayed).
+5. **Reconnect/catch-up (acceptance criterion):** while viewing the board, open DevTools → Network → set **Offline**. Run `POST /checkin`, `POST /queue/call-next`, or `POST /queue/{id}/complete` against the API. Set the network back to **Online** — the board reconnects and corrects itself to the changes it missed while offline (a "Reconnecting…" banner appears in the corner while degraded). This exercises the shared `QueueHubService`'s catch-up path end-to-end from a real browser.
+
+**Court privacy reminder:** the board displays only ticket numbers (`A-042`, etc.), never names or identifying information — this is a public display.
+
 ## Angular vs. Blazor comparison
 
 Filled in from actual observations, not boilerplate: dev experience, container image size and startup time, what service discovery looked like from each side, and the plumbing delta for the reconnect logic. This section is meant to help the team pick a direction.

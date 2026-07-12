@@ -1,0 +1,95 @@
+<section class="queue-console">
+  @if (isPolling()) {
+    <p class="reconnecting" role="status">Reconnecting… queue state is still saved.</p>
+  }
+
+  @if (actionError(); as message) {
+    <div class="action-error" role="alert">{{ message }}</div>
+  }
+
+  <div class="console-grid">
+    <div class="queue-section">
+      <h2>Serving</h2>
+      @if (servingEntries().length === 0) {
+        <p class="empty-state">No one being served</p>
+      } @else {
+        <ul class="entry-list">
+          @for (entry of servingEntries(); track entry.id) {
+            <li class="entry-row entry-serving">
+              <div class="entry-header">
+                <span class="ticket">{{ entry.ticketNumber }}</span>
+                <span class="name">{{ entry.displayName }}</span>
+                @if (entry.servedBy) {
+                  <span class="served-by">({{ entry.servedBy }})</span>
+                }
+              </div>
+              <div class="entry-actions">
+                <button
+                  class="secondary-button"
+                  type="button"
+                  (click)="selectEntry(entry.id)"
+                  [disabled]="actioning()"
+                >
+                  View documents
+                </button>
+                <button
+                  class="primary-button"
+                  type="button"
+                  (click)="complete(entry.id)"
+                  [disabled]="actioning()"
+                >
+                  Complete
+                </button>
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+
+    <div class="queue-section">
+      <h2>Waiting</h2>
+      <div class="waiting-summary">
+        {{ totalWaiting() }} {{ totalWaiting() === 1 ? 'person' : 'people' }} waiting
+      </div>
+      @if (waitingEntries().length === 0) {
+        <p class="empty-state">No one waiting</p>
+      } @else {
+        <ul class="entry-list">
+          @for (entry of waitingEntries(); let i = $index; track entry.id) {
+            <li class="entry-row entry-waiting">
+              <div class="entry-header">
+                <span class="position">#{{ i + 1 }}</span>
+                <span class="ticket">{{ entry.ticketNumber }}</span>
+                <span class="name">{{ entry.displayName }}</span>
+              </div>
+              <button
+                class="secondary-button"
+                type="button"
+                (click)="selectEntry(entry.id)"
+                [disabled]="actioning()"
+              >
+                View documents
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  </div>
+
+  <div class="call-next-footer">
+    <button
+      class="primary-button large"
+      type="button"
+      (click)="callNext()"
+      [disabled]="actioning() || totalWaiting() === 0"
+    >
+      {{ actioning() ? 'Calling…' : 'Call Next' }}
+    </button>
+  </div>
+
+  @if (selectedEntryId(); as entryId) {
+    <app-document-viewer [entryId]="entryId" [staffKey]="staffKey()" />
+  }
+</section>

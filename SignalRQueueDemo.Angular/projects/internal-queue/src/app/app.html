@@ -1,16 +1,7 @@
-<main class="smoke-page">
-  <h1>internal-queue</h1>
-  <p>Shell only — the staff call-next console lands in issue #10. This page proves <code>QueueHubService</code> is wired up.</p>
-
-  <p>Connection state: <strong>{{ hub.connectionState() }}</strong></p>
-
-  @if (hub.snapshot(); as snapshot) {
-    <p>Waiting: {{ snapshot.totalWaiting }} · Serving: {{ snapshot.totalServing }} · Completed: {{ snapshot.totalCompleted }}</p>
+<main class="staff-console">
+  @if (staffKey(); as key) {
+    <app-queue-console [staffKey]="key" (authError)="session.signOut()" />
   } @else {
-    <p>Loading queue state…</p>
-  }
-
-  @if (hub.lastUpdate(); as update) {
-    <p>Last live QueueUpdated: seq {{ update.sequenceNumber }}, entry {{ update.changedEntry.ticketNumber }}</p>
+    <app-staff-sign-in (signedIn)="onSignedIn()" />
   }
 </main>

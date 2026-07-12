@@ -1,16 +1,22 @@
-<main class="smoke-page">
-  <h1>queue-display</h1>
-  <p>Shell only — the waiting-room board lands in issue #11. This page proves <code>QueueHubService</code> is wired up.</p>
-
-  <p>Connection state: <strong>{{ hub.connectionState() }}</strong></p>
-
-  @if (hub.snapshot(); as snapshot) {
-    <p>Waiting: {{ snapshot.totalWaiting }} · Serving: {{ snapshot.totalServing }} · Completed: {{ snapshot.totalCompleted }}</p>
+<main class="board">
+  @if (snapshot()) {
+    <div class="board-grid">
+      <div class="now-serving-section">
+        <app-now-serving />
+      </div>
+      <div class="waiting-section">
+        <app-waiting-list />
+      </div>
+    </div>
   } @else {
-    <p>Loading queue state…</p>
+    <div class="loading">
+      <p>Loading queue…</p>
+    </div>
   }
 
-  @if (hub.lastUpdate(); as update) {
-    <p>Last live QueueUpdated: seq {{ update.sequenceNumber }}, entry {{ update.changedEntry.ticketNumber }}</p>
+  @if (isPolling()) {
+    <div class="reconnecting-banner">
+      <p>Reconnecting…</p>
+    </div>
   }
 </main>
