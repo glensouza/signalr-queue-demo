@@ -143,6 +143,19 @@ public static class QueueEndpoints
       {
         await documentRepository.DeleteDocumentsAsync(id, ct);
         await blobStore.DeleteAllForEntryAsync(id, ct);
+
+        // The broadcast above (from CompleteAsync) necessarily precedes this deletion, so it still carries the
+        // entry's pre-deletion DocumentCount. Push a second, document-only update — same call as the upload path
+        // in DocumentEndpoints.HandleUploadDocumentAsync — so connected clients see DocumentCount drop to 0
+        // instead of the completed entry's last-known count staying stale forever. This also fulfils the
+        // RecordDocumentChangeAsync contract ("records that documents were cleared"), which the completion path
+        // previously left unhonoured. Low stakes even on failure: completed entries are filtered out of every UI,
+        // so a stale count here was only ever a latent inconsistency, never a visible bug.
+        QueueUpdated? documentsClearedUpdate = await repository.RecordDocumentChangeAsync(id, ct);
+        if (documentsClearedUpdate is not null)
+        {
+          await broadcaster.BroadcastAsync(documentsClearedUpdate);
+        }
       }
       catch (Exception ex)
       {

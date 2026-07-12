@@ -52,6 +52,14 @@ public sealed record QueueEntry
   /// live <see cref="QueueSnapshot"/> path (where the repository counts documents alongside the entries); the
   /// per-entry copies carried by catch-up replay leave it at 0 and self-heal on the next full snapshot, matching
   /// how that path already treats its derived state as approximate.
+  ///
+  /// <para>
+  /// <b>Concrete symptom of that tolerance, accepted on purpose (see docs/decisions.md, 2026-07-12):</b> an entry
+  /// that already has documents and changes lifecycle state (e.g. gets called next) while a staff console is
+  /// briefly disconnected gets replayed by catch-up with <c>DocumentCount = 0</c>, so the console's "view
+  /// documents" control stays hidden for that entry until the next full snapshot — every reconnect and every
+  /// polling tick eventually triggers one, so the window is self-closing, not a permanent loss of access.
+  /// </para>
   /// </summary>
   public int DocumentCount { get; init; }
 }

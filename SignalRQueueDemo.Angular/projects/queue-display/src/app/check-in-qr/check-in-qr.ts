@@ -15,6 +15,12 @@ import { RuntimeConfigService } from 'shared';
  * renders nothing, so the board simply omits the call-to-action rather than showing a broken link. Note for the
  * POC: that URL is a localhost address (all apps run on the one isolated machine), so the QR is illustrative of the
  * pattern — a phone on a separate network can't reach localhost; a real deployment would inject a routable URL.</p>
+ *
+ * <p>{@link checkInUrl} and {@link qrDataUrl} are lazy getters rather than field initializers: `RuntimeConfigService.get()`
+ * throws until the app-initializer in `provideRuntimeConfig()` has loaded config.json, and a field initializer would run
+ * at construction — before Angular guarantees that has happened (e.g. under SSG/prerender, or if a future refactor drops
+ * `provideRuntimeConfig` from this app). A lazy read defers the throw risk to render time, matching the pattern used by
+ * `QueueApiService.baseUrl`.</p>
  */
 @Component({
   selector: 'app-check-in-qr',
@@ -26,14 +32,18 @@ export class CheckInQr {
   private readonly config = inject(RuntimeConfigService);
 
   /** The public-checkin URL to advertise, or null when this deployment didn't configure one (then the CTA is hidden). */
-  protected readonly checkInUrl: string | null = this.config.get().publicCheckinUrl ?? null;
+  protected get checkInUrl(): string | null {
+    return this.config.get().publicCheckinUrl ?? null;
+  }
 
   /**
-   * A QR-code image of {@link checkInUrl} as a GIF data URL, generated once at construction (the URL is fixed for
-   * the app's lifetime). Null when there's no URL. Bound to an `<img src>`, which Angular treats an image data URL
-   * as safe for, so no sanitizer bypass is needed.
+   * A QR-code image of {@link checkInUrl} as a GIF data URL. Null when there's no URL. Bound to an `<img src>`,
+   * which Angular treats an image data URL as safe for, so no sanitizer bypass is needed.
    */
-  protected readonly qrDataUrl: string | null = this.checkInUrl ? CheckInQr.buildQrDataUrl(this.checkInUrl) : null;
+  protected get qrDataUrl(): string | null {
+    const url: string | null = this.checkInUrl;
+    return url ? CheckInQr.buildQrDataUrl(url) : null;
+  }
 
   private static buildQrDataUrl(url: string): string {
     // typeNumber 0 = auto-size to the data; 'M' error correction tolerates a scuffed/curled printout while keeping

@@ -493,7 +493,8 @@ public sealed class TableStorageQueueRepository : IQueueRepository
     }
 
     List<QueueEntryTableEntity> ordered = entities.OrderBy(e => e.CheckedInAt).ToList();
-    Dictionary<string, int> documentCounts = await this.CountDocumentsByEntryAsync(ct);
+    Dictionary<string, int> documentCounts = await this.CountDocumentsByEntryAsync(
+      ordered.Select(e => e.RowKey).ToList(), ct);
 
     return new QueueSnapshot
     {
@@ -505,18 +506,52 @@ public sealed class TableStorageQueueRepository : IQueueRepository
   }
 
   /// <summary>
-  /// Counts document-metadata rows per entry by tallying each row's PartitionKey (which is the entry id — see
-  /// <see cref="DocumentTableEntity"/>). Table Storage has no server-side GROUP BY or COUNT, so this walks the
-  /// table client-side; only the PartitionKey is selected so the scan stays cheap (no metadata columns pulled),
-  /// and at this POC's document volume a full walk is well within budget.
+  /// Counts document-metadata rows per entry, scoped to <paramref name="entryIds"/> (the entries in the snapshot
+  /// being built) rather than the whole <c>QueueDocuments</c> table. <see cref="DocumentTableEntity"/>'s
+  /// PartitionKey is the owning entry's id, so each entry's documents live in their own partition — this issues one
+  /// partition-scoped query per entry (in parallel) instead of a single scan of every document row Table Storage
+  /// has ever stored.
+  ///
+  /// <para>
+  /// This replaced an earlier version that queried the whole table and tallied by PartitionKey client-side. That
+  /// approach's cost was <c>O(all documents ever stored)</c>, on <em>every</em> snapshot build (every mutation,
+  /// every GET /queue, every polling tick per client) — unbounded relative to the queue size it was decorating,
+  /// and made worse by the fact that document deletion on complete (<c>QueueEndpoints.HandleCompleteAsync</c>) is
+  /// best-effort: a failed cleanup left orphaned rows that were rescanned forever after. Scoping to the current
+  /// snapshot's entry ids bounds the cost to <c>O(entries currently in the queue)</c> instead — this POC's expected
+  /// scale (dozens, not thousands) — trading a full scan for N small round-trips, which is the right trade at that
+  /// volume. It does NOT reclaim orphaned rows (still-dead storage after a failed delete), it just stops paying to
+  /// scan them.
+  /// </para>
   /// </summary>
-  private async Task<Dictionary<string, int>> CountDocumentsByEntryAsync(CancellationToken ct)
+  private async Task<Dictionary<string, int>> CountDocumentsByEntryAsync(IReadOnlyCollection<string> entryIds, CancellationToken ct)
   {
-    Dictionary<string, int> counts = [];
-    await foreach (DocumentTableEntity document in this.documentsTable.QueryAsync<DocumentTableEntity>(
-      select: ["PartitionKey"], cancellationToken: ct))
+    if (entryIds.Count == 0)
     {
-      counts[document.PartitionKey] = counts.GetValueOrDefault(document.PartitionKey) + 1;
+      return [];
+    }
+
+    async Task<(string EntryId, int Count)> CountForEntryAsync(string entryId)
+    {
+      int count = 0;
+      await foreach (DocumentTableEntity _ in this.documentsTable.QueryAsync<DocumentTableEntity>(
+        filter: $"PartitionKey eq '{entryId}'", select: ["PartitionKey"], cancellationToken: ct))
+      {
+        count++;
+      }
+
+      return (entryId, count);
+    }
+
+    (string EntryId, int Count)[] results = await Task.WhenAll(entryIds.Select(CountForEntryAsync));
+
+    Dictionary<string, int> counts = [];
+    foreach ((string entryId, int count) in results)
+    {
+      if (count > 0)
+      {
+        counts[entryId] = count;
+      }
     }
 
     return counts;
