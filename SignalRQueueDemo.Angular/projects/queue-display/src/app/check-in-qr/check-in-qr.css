@@ -1,35 +1,45 @@
-/* Corner call-to-action on the board. Minimal styling — the POC compares plumbing, not polish — but sized so the
-   QR is scannable and the URL legible across a waiting room. */
 .check-in-cta {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  gap: 1rem;
   margin-top: 1.5rem;
-  padding: 1rem 1.5rem;
-  border: 2px solid #e0e0e0;
-  border-radius: 0.75rem;
-  background: white;
+  padding: 1.5rem 2rem;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-glass);
+  position: absolute;
+  bottom: 2rem;
+  left: 2rem;
+  z-index: 10;
 }
 
 .cta-label {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #333;
-}
-
-.cta-qr {
-  width: 160px;
-  height: 160px;
-  image-rendering: pixelated; /* keep QR modules crisp when the data URL is scaled up */
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .cta-url {
   margin: 0;
-  font-family: monospace;
-  font-size: 0.95rem;
-  color: #1a5fb4;
+  font-family: 'Inter', monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent-primary);
   word-break: break-all;
-  text-align: center;
+}
+
+.cta-qr {
+  width: 140px;
+  height: 140px;
+  image-rendering: pixelated;
+  border-radius: 8px;
+  background: white;
+  padding: 8px;
 }

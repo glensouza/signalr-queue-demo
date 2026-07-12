@@ -78,6 +78,14 @@ export class QueueApiService {
     );
   }
 
+  /** POST /queue/{id}/cancel — cancels an entry in the queue. */
+  cancel(id: string): Observable<QueueUpdated> {
+    return this.httpClient.post<QueueUpdated>(
+      `${this.baseUrl}/queue/${encodeURIComponent(id)}/cancel`,
+      {}
+    );
+  }
+
   /** GET /queue — current queue snapshot + latest sequence number. Used both for a first-load view and as the polling fallback's request when QueueHubService can't hold a SignalR connection open. */
   getQueue(): Observable<QueueStateResponse> {
     return this.httpClient.get<QueueStateResponse>(`${this.baseUrl}/queue`);

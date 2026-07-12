@@ -8,7 +8,7 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { CheckInResponse, QueueHubService, QueueStatus } from 'shared';
+import { CheckInResponse, QueueHubService, QueueApiService, QueueStatus } from 'shared';
 import { DocumentUpload } from '../document-upload/document-upload';
 
 /**
@@ -39,6 +39,7 @@ const AUTO_RESET_SECONDS = 10;
 })
 export class PositionView implements OnDestroy {
   private readonly hub = inject(QueueHubService);
+  private readonly apiService = inject(QueueApiService);
 
   /** The result of this visitor's check-in — supplies the entry id to track and the seed position. */
   readonly checkIn = input.required<CheckInResponse>();
@@ -115,7 +116,17 @@ export class PositionView implements OnDestroy {
   /** Manual "stop tracking this person" — clears any running auto-reset and asks the shell to drop just this card. */
   protected startOver(): void {
     this.clearAutoReset();
-    this.finished.emit();
+    
+    // Also cancel from the backend queue
+    const me = this.myEntry();
+    if (me && (me.status === QueueStatus.Waiting || me.status === QueueStatus.Serving)) {
+      this.apiService.cancel(me.id).subscribe({
+        next: () => this.finished.emit(),
+        error: () => this.finished.emit() // Still emit finished even if api fails so they aren't stuck locally
+      });
+    } else {
+      this.finished.emit();
+    }
   }
 
   private startAutoReset(): void {

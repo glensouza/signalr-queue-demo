@@ -39,6 +39,8 @@ public static class QueueEndpoints
     app.MapPost("/queue/{id}/complete", HandleCompleteAsync)
       .RequireCors(CorsPolicies.KnownFrontends)
       .AddEndpointFilter<StaffAuthFilter>();
+    app.MapPost("/queue/{id}/cancel", HandleCancelAsync)
+      .RequireCors(CorsPolicies.KnownFrontends);
     // A read-only "is this staff key valid?" probe, gated by the same StaffAuthFilter as the real staff actions.
     // It exists so the internal-queue sign-in screen can reject a wrong key up front instead of silently accepting
     // any non-empty string and only surfacing the 401 on the first call-next/complete/document view. The filter
@@ -178,6 +180,56 @@ public static class QueueEndpoints
         Detail = $"Queue entry '{id}' must be in the Serving status to be completed."
       }),
       _ => Results.Problem("Unexpected outcome completing the queue entry.")
+    };
+  }
+
+  private static async Task<IResult> HandleCancelAsync(
+    string id,
+    IQueueRepository repository,
+    IDocumentRepository documentRepository,
+    DocumentBlobStore blobStore,
+    QueueBroadcaster broadcaster,
+    ILoggerFactory loggerFactory,
+    CancellationToken ct)
+  {
+    QueueOperationResult result = await repository.CancelAsync(id, ct);
+
+    if (result.Outcome == QueueOperationOutcome.Success)
+    {
+      await broadcaster.BroadcastAsync(result.Update!);
+
+      try
+      {
+        await documentRepository.DeleteDocumentsAsync(id, ct);
+        await blobStore.DeleteAllForEntryAsync(id, ct);
+
+        QueueUpdated? documentsClearedUpdate = await repository.RecordDocumentChangeAsync(id, ct);
+        if (documentsClearedUpdate is not null)
+        {
+          await broadcaster.BroadcastAsync(documentsClearedUpdate);
+        }
+      }
+      catch (Exception ex)
+      {
+        loggerFactory.CreateLogger("SignalRQueueDemo.ApiService.Endpoints.QueueEndpoints").LogWarning(
+          ex, "Cancelled entry {EntryId} but failed to delete its documents; content may be orphaned in Blob Storage.", id);
+      }
+    }
+
+    return result.Outcome switch
+    {
+      QueueOperationOutcome.Success => Results.Ok(result.Update),
+      QueueOperationOutcome.EntryNotFound => Results.NotFound(new ProblemDetails
+      {
+        Title = "Entry not found",
+        Detail = $"No queue entry with id '{id}' exists."
+      }),
+      QueueOperationOutcome.InvalidState => Results.Conflict(new ProblemDetails
+      {
+        Title = "Entry cannot be cancelled",
+        Detail = $"Queue entry '{id}' must not be completed or cancelled already."
+      }),
+      _ => Results.Problem("Unexpected outcome cancelling the queue entry.")
     };
   }
 

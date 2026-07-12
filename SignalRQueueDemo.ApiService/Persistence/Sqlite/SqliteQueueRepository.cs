@@ -126,6 +126,25 @@ public sealed class SqliteQueueRepository(QueueDbContext dbContext) : IQueueRepo
     return QueueOperationResult.Success(await this.RecordChangeAndBuildUpdateAsync(entity, ct));
   }
 
+  public async Task<QueueOperationResult> CancelAsync(string entryId, CancellationToken ct = default)
+  {
+    QueueEntryEntity? entity = await this.dbContext.Entries.FirstOrDefaultAsync(e => e.Id == entryId, ct);
+
+    if (entity is null)
+    {
+      return QueueOperationResult.Failure(QueueOperationOutcome.EntryNotFound);
+    }
+
+    if (entity.Status == QueueStatus.Completed || entity.Status == QueueStatus.Cancelled)
+    {
+      return QueueOperationResult.Failure(QueueOperationOutcome.InvalidState);
+    }
+
+    entity.Status = QueueStatus.Cancelled;
+
+    return QueueOperationResult.Success(await this.RecordChangeAndBuildUpdateAsync(entity, ct));
+  }
+
   public async Task<long> GetLatestSequenceAsync(CancellationToken ct = default) =>
     await this.dbContext.ChangeEvents.MaxAsync(e => (long?)e.SequenceNumber, ct) ?? 0;
 
@@ -240,7 +259,7 @@ public sealed class SqliteQueueRepository(QueueDbContext dbContext) : IQueueRepo
     {
       TotalWaiting = entities.Count(e => e.Status == QueueStatus.Waiting),
       TotalServing = entities.Count(e => e.Status == QueueStatus.Serving),
-      TotalCompleted = entities.Count(e => e.Status == QueueStatus.Completed),
+      TotalCompleted = entities.Count(e => e.Status == QueueStatus.Completed || e.Status == QueueStatus.Cancelled),
       Queue = entities.Select(e => e.ToContract(documentCounts.GetValueOrDefault(e.Id))).ToList()
     };
   }

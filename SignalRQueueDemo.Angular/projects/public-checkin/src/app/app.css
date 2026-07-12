@@ -1,20 +1,15 @@
-/* Centered single column with a comfortable max width — reads well on a phone (a visitor's own device) and on a
-   full-screen lobby kiosk alike. No assumptions about browser chrome, per issue #9. */
 .kiosk {
-  max-width: 32rem;
+  max-width: 36rem;
   margin: 0 auto;
-  padding: 2rem 1.5rem;
+  padding: 4rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
-/* Stacks each tracked person's live card with a divider between them, so several people tracked on one device
-   read as a clear list rather than running together. */
 .tracked-list {
   display: flex;
   flex-direction: column;
+  gap: 2rem;
 }
 
-.tracked-list > app-position-view:not(:first-child) {
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
-  border-top: 2px solid #e0e0e0;
-}
