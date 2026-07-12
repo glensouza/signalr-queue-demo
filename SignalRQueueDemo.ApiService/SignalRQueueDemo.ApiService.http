@@ -3,7 +3,7 @@
 ### The static key StaffAuthFilter checks on every staff endpoint below. The value here matches the
 ### PLACEHOLDER-... default in appsettings.json — a real deployment overrides that setting via user-secrets or
 ### an environment variable, and this variable would need to match whatever it's changed to.
-@staffKey = PLACEHOLDER-staff-key-never-a-real-secret-see-CLAUDE.md
+@staffKey = PLACEHOLDER-staff-key-not-a-real-secret-override-via-user-secrets
 
 ### Current queue state + latest sequence number. Seeded with "Jane Test" (A-042) and "Sam Sample" (A-043)
 ### on first run against a fresh database. Public, hardened by CORS only (no write, no token needed).

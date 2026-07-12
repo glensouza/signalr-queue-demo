@@ -130,8 +130,17 @@ export class QueueHubService implements OnDestroy {
     // not retry a HubConnection.start() that never succeeded in the first place. That asymmetry is exactly why
     // this method has two separate failure paths below: the initial-connect timeout race, and the onclose
     // handler for a connection that did come up but then exhausted every automatic-reconnect attempt.
+    // withCredentials: false is load-bearing here, not a default worth omitting. @microsoft/signalr defaults
+    // withCredentials to TRUE on every HTTP request it makes (negotiate included), which turns those into
+    // credentialed CORS requests — and a credentialed request is only accepted by the browser if the response
+    // carries `Access-Control-Allow-Credentials: true`, which the API's loopback CORS policy deliberately does not
+    // send (nothing here authenticates with cookies — the staff key and check-in token are plain headers). So with
+    // the default, the browser blocks the negotiate response despite its HTTP 200, the hub never connects, and this
+    // service silently falls back to polling — the "reconnecting…" state, on every app. Setting it false makes the
+    // hub's requests non-credentialed, exactly like QueueApiService's REST calls (Angular HttpClient defaults
+    // withCredentials to false), so the same loopback CORS policy that already works for REST works for the socket.
     this.connection = new HubConnectionBuilder()
-      .withUrl(hubUrl)
+      .withUrl(hubUrl, { withCredentials: false })
       .withAutomaticReconnect([0, 2_000, 5_000, 10_000, 10_000])
       .configureLogging(LogLevel.Warning)
       .build();
