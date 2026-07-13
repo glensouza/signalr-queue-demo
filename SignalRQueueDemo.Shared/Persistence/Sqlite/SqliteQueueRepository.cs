@@ -144,6 +144,27 @@ public sealed class SqliteQueueRepository(IDbContextFactory<QueueDbContext> dbCo
     return QueueOperationResult.Success(await RecordChangeAndBuildUpdateAsync(dbContext, entity, ct));
   }
 
+  public async Task<QueueOperationResult> CancelAsync(string entryId, CancellationToken ct = default)
+  {
+    await using QueueDbContext dbContext = await this.dbContextFactory.CreateDbContextAsync(ct);
+
+    QueueEntryEntity? entity = await dbContext.Entries.FirstOrDefaultAsync(e => e.Id == entryId, ct);
+
+    if (entity is null)
+    {
+      return QueueOperationResult.Failure(QueueOperationOutcome.EntryNotFound);
+    }
+
+    if (entity.Status == QueueStatus.Completed || entity.Status == QueueStatus.Cancelled)
+    {
+      return QueueOperationResult.Failure(QueueOperationOutcome.InvalidState);
+    }
+
+    entity.Status = QueueStatus.Cancelled;
+
+    return QueueOperationResult.Success(await RecordChangeAndBuildUpdateAsync(dbContext, entity, ct));
+  }
+
   public async Task<long> GetLatestSequenceAsync(CancellationToken ct = default)
   {
     await using QueueDbContext dbContext = await this.dbContextFactory.CreateDbContextAsync(ct);

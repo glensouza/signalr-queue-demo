@@ -39,6 +39,14 @@ public static class QueueEndpoints
     app.MapPost("/queue/{id}/complete", HandleCompleteAsync)
       .RequireCors(CorsPolicies.KnownFrontends)
       .AddEndpointFilter<StaffAuthFilter>();
+    // Cancel is a public (kiosk-initiated) write, so it carries the same CheckInTokenFilter as POST /checkin rather
+    // than the StaffAuthFilter the staff-only complete/call-next use — a visitor tapping "Stop tracking" on the kiosk
+    // isn't staff, but this must not be an unauthenticated write either (that would let any caller cancel and delete
+    // the documents of an arbitrary entry by id). It follows the "protect writes, not reads" anti-forgery pattern the
+    // rest of the public path uses; see the 2026-07-12 cancel decision in docs/decisions.md.
+    app.MapPost("/queue/{id}/cancel", HandleCancelAsync)
+      .RequireCors(CorsPolicies.KnownFrontends)
+      .AddEndpointFilter<CheckInTokenFilter>();
     // A read-only "is this staff key valid?" probe, gated by the same StaffAuthFilter as the real staff actions.
     // It exists so the internal-queue sign-in screen can reject a wrong key up front instead of silently accepting
     // any non-empty string and only surfacing the 401 on the first call-next/complete/document view. The filter
@@ -154,6 +162,44 @@ public static class QueueEndpoints
         Detail = $"Queue entry '{id}' must be in the Serving status to be completed."
       }),
       _ => Results.Problem("Unexpected outcome completing the queue entry.")
+    };
+  }
+
+  private static async Task<IResult> HandleCancelAsync(
+    string id,
+    QueueCancellationService cancellationService,
+    QueueBroadcaster broadcaster,
+    CancellationToken ct)
+  {
+    // Same split as HandleCompleteAsync: cancellation + document cleanup live in QueueCancellationService
+    // (SignalRQueueDemo.Shared) so a Blazor-originated cancel (the kiosk's "Stop tracking" button) gets the same
+    // document cleanup as this REST endpoint. Broadcasting stays here — the one part that differs per host.
+    QueueCancellationResult result = await cancellationService.CancelAsync(id, ct);
+
+    if (result.OperationResult.Outcome == QueueOperationOutcome.Success)
+    {
+      await broadcaster.BroadcastAsync(result.OperationResult.Update!);
+
+      if (result.DocumentsClearedUpdate is not null)
+      {
+        await broadcaster.BroadcastAsync(result.DocumentsClearedUpdate);
+      }
+    }
+
+    return result.OperationResult.Outcome switch
+    {
+      QueueOperationOutcome.Success => Results.Ok(result.OperationResult.Update),
+      QueueOperationOutcome.EntryNotFound => Results.NotFound(new ProblemDetails
+      {
+        Title = "Entry not found",
+        Detail = $"No queue entry with id '{id}' exists."
+      }),
+      QueueOperationOutcome.InvalidState => Results.Conflict(new ProblemDetails
+      {
+        Title = "Entry cannot be cancelled",
+        Detail = $"Queue entry '{id}' must not be completed or cancelled already."
+      }),
+      _ => Results.Problem("Unexpected outcome cancelling the queue entry.")
     };
   }
 

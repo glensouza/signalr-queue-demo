@@ -1,21 +1,29 @@
-/* Minimal, touch-friendly — same rationale as the check-in form's styles. */
 .document-upload {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 1.5rem;
-  border: 2px dashed #b0b0b0;
-  border-radius: 0.75rem;
+  gap: 1.25rem;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.2);
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-md);
+  transition: var(--transition);
+}
+
+.document-upload:hover {
+  border-color: var(--accent-secondary);
+  background: rgba(14, 165, 233, 0.05);
 }
 
 .document-upload h2 {
   margin: 0;
   font-size: 1.5rem;
+  color: var(--text-primary);
 }
 
 .hint {
   margin: 0;
-  color: #555;
+  color: var(--text-secondary);
+  font-size: 1rem;
 }
 
 .upload-button {
@@ -24,21 +32,28 @@
   justify-content: center;
   min-height: 3.5rem;
   padding: 0 1.5rem;
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   font-weight: 600;
-  color: #1a5fb4;
-  background: #eaf1fb;
-  border: 2px solid #1a5fb4;
-  border-radius: 0.5rem;
+  color: var(--accent-secondary);
+  background: rgba(14, 165, 233, 0.1);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: var(--transition);
+}
+
+.upload-button:hover:not(.disabled) {
+  background: rgba(14, 165, 233, 0.2);
+  border-color: var(--accent-secondary);
+  transform: translateY(-1px);
 }
 
 .upload-button.disabled {
-  opacity: 0.6;
-  cursor: default;
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(1);
 }
 
-/* Hide the native <input type="file"> while keeping it focusable/operable via its wrapping <label>. */
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -52,13 +67,29 @@
 
 .error {
   margin: 0;
-  color: #a51d2d;
+  padding: 0.75rem;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
 }
 
 .uploaded-list {
   margin: 0;
-  padding-left: 0;
+  padding: 0;
   list-style: none;
-  color: #26734d;
-  font-size: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.uploaded-list li {
+  color: var(--accent-success);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.uploaded-list li::before {
+  content: '✓';
 }

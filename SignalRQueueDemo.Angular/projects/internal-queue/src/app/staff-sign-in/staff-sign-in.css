@@ -1,65 +1,97 @@
-/* Staff-friendly form: large touch targets, generous spacing, one column. Styling is deliberately minimal —
-   the POC compares plumbing (Angular vs. Blazor), not visual polish. */
 .staff-sign-in {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 2rem;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 3rem 2.5rem;
+  box-shadow: var(--shadow-glass);
+  width: 100%;
+}
+
+.staff-sign-in h2 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: center;
 }
 
 .lede {
-  margin: 0;
-  font-size: 1.25rem;
-  color: #555;
+  margin: -1rem 0 0 0;
+  font-size: 1.15rem;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.75rem;
 }
 
 .field-label {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   font-weight: 600;
+  color: var(--text-primary);
 }
 
-/* min-height 3.5rem keeps every input a comfortable touch target on a staff console screen. */
 .field-input {
   min-height: 3.5rem;
   padding: 0 1rem;
-  font-size: 1.5rem;
-  border: 2px solid #b0b0b0;
-  border-radius: 0.5rem;
+  font-size: 1.25rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  transition: var(--transition);
 }
 
 .field-input:focus {
   outline: none;
-  border-color: #1a5fb4;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15);
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .error {
   margin: 0;
-  font-size: 1.15rem;
-  color: #a51d2d;
+  padding: 1rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: var(--radius-sm);
+  text-align: center;
 }
 
-/* POC affordance, not chrome for a real staff screen: points the demo user at where the accepted key lives. */
 .hint {
-  margin: -0.75rem 0 0;
-  font-size: 1rem;
-  color: #666;
+  margin: -0.5rem 0 0;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 .hint code {
-  padding: 0.1rem 0.3rem;
+  padding: 0.2rem 0.4rem;
   font-size: 0.9em;
-  background: #efefef;
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 0.25rem;
+  color: var(--text-primary);
 }
 
-/* Dim the disabled input/button while a verify round-trip is in flight, so the form reads as busy. */
-.field-input:disabled,
-.primary-button:disabled {
-  opacity: 0.6;
+.field-input:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.primary-button {
+  min-height: 3.5rem;
+  font-size: 1.15rem;
+  margin-top: 1rem;
 }

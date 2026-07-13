@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { CheckInResponse, QueueHubService, QueueStatus } from 'shared';
 import { DocumentUpload } from '../document-upload/document-upload';
+import { KioskCheckInService } from '../kiosk-check-in.service';
 
 /**
  * How long the "you're all done" screen stays up before the kiosk auto-resets to a blank form. Long enough for
@@ -39,6 +40,7 @@ const AUTO_RESET_SECONDS = 10;
 })
 export class PositionView implements OnDestroy {
   private readonly hub = inject(QueueHubService);
+  private readonly kiosk = inject(KioskCheckInService);
 
   /** The result of this visitor's check-in — supplies the entry id to track and the seed position. */
   readonly checkIn = input.required<CheckInResponse>();
@@ -115,7 +117,23 @@ export class PositionView implements OnDestroy {
   /** Manual "stop tracking this person" — clears any running auto-reset and asks the shell to drop just this card. */
   protected startOver(): void {
     this.clearAutoReset();
+
+    // Capture the entry before emitting: emitting finished tears this card (and component) down, so the cancel
+    // below must not read any component state afterwards. id is a plain string copy, safe to use post-teardown.
+    const me = this.myEntry();
+
+    // Drop the card immediately — the local UX must never wait on (or be blocked by) the backend round-trip.
     this.finished.emit();
+
+    // Best-effort backend cancel so the entry also clears from the staff queue. Fire-and-forget: the component may
+    // already be destroyed, so this deliberately touches nothing on it. A failure is swallowed (the entry simply
+    // stays in the staff queue) — the same "don't strand the visitor locally on an API failure" intent as before,
+    // now without emitting from an async callback that could run after teardown.
+    if (me && (me.status === QueueStatus.Waiting || me.status === QueueStatus.Serving)) {
+      this.kiosk.cancel(me.id).catch(() => {
+        // Swallowed on purpose: the card is already gone locally; a failed cancel leaves the entry in the queue.
+      });
+    }
   }
 
   private startAutoReset(): void {

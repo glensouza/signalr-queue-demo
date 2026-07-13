@@ -1,19 +1,22 @@
-/* Staff console wrapper: spans the full viewport, no artificial max-width (staff see a lot at once) */
 .staff-console {
-  font-family: system-ui, sans-serif;
-  padding: 2rem;
+  padding: 3rem 2rem;
   min-height: 100vh;
-  background: white;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Sign-in form: centered, moderate width */
 .staff-console app-staff-sign-in {
-  display: block;
-  max-width: 32rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+  max-width: 36rem;
   margin: 0 auto;
+  width: 100%;
 }
 
-/* Queue console: uses full available space */
 .staff-console app-queue-console {
   display: block;
+  flex: 1;
 }
+

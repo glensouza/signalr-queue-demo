@@ -1,5 +1,6 @@
 @implements IDisposable
 @inject QueueRealtimeService Realtime
+@inject QueueCancellationService CancellationService
 
 <div class="position-view">
     @switch (CurrentStatus)
@@ -16,7 +17,7 @@
             break;
     }
 
-    <button type="button" @onclick="() => OnFinished.InvokeAsync()">Stop tracking</button>
+    <button type="button" @onclick="this.StopTrackingAsync">Stop tracking</button>
 </div>
 
 @code {
@@ -65,6 +66,53 @@
     }
 
     protected override void OnInitialized() => Realtime.Changed += this.OnRealtimeChanged;
+
+    /// <summary>
+    /// Manual "stop tracking this person" — mirrors the Angular reference client's <c>PositionView.startOver</c>
+    /// exactly: drop the card locally first (the local UX must never wait on the backend round-trip), then fire
+    /// a best-effort cancel so the entry also clears from the staff queue instead of sitting in it forever. Only
+    /// cancels if the entry hadn't already reached Completed — the auto-reset countdown's own path
+    /// (<see cref="Tick"/>) never calls this, so Completed entries are never redundantly "cancelled".
+    /// </summary>
+    private async Task StopTrackingAsync()
+    {
+        string entryId = this.EntryId;
+        QueueStatus statusAtStop = this.CurrentStatus;
+
+        this.resetTimer?.Dispose();
+        this.resetTimer = null;
+
+        await this.OnFinished.InvokeAsync();
+
+        if (statusAtStop is QueueStatus.Waiting or QueueStatus.Serving)
+        {
+            // Fire-and-forget: this component is torn down by OnFinished above, so nothing past this point may
+            // touch component state — only the captured entryId and injected (circuit-scoped, not
+            // component-scoped) services are used. A failed cancel is swallowed, same as Angular: the card is
+            // already gone locally, and the entry harmlessly stays in the staff queue.
+            _ = this.CancelBestEffortAsync(entryId);
+        }
+    }
+
+    private async Task CancelBestEffortAsync(string entryId)
+    {
+        try
+        {
+            QueueCancellationResult result = await CancellationService.CancelAsync(entryId);
+            if (result.OperationResult.Outcome == QueueOperationOutcome.Success)
+            {
+                await Realtime.PublishAsync(result.OperationResult.Update!);
+                if (result.DocumentsClearedUpdate is not null)
+                {
+                    await Realtime.PublishAsync(result.DocumentsClearedUpdate);
+                }
+            }
+        }
+        catch
+        {
+            // Swallowed on purpose — see StopTrackingAsync's remarks.
+        }
+    }
 
     private void OnRealtimeChanged() => this.InvokeAsync(() =>
     {

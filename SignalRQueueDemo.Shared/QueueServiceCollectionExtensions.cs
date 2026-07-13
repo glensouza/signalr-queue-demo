@@ -106,11 +106,13 @@ public static class QueueServiceCollectionExtensions
     builder.AddAzureBlobServiceClient(connectionName: "blobs");
     builder.Services.AddSingleton<DocumentBlobStore>();
 
-    // Sit on top of whichever repositories were just registered above — see DocumentUploadService's and
-    // QueueCompletionService's remarks for why upload validation and complete-time document cleanup live here
-    // instead of duplicated between ApiService's endpoints and Blazor's pages.
+    // Sit on top of whichever repositories were just registered above — see DocumentUploadService's,
+    // QueueCompletionService's, and QueueCancellationService's remarks for why upload validation and
+    // complete-/cancel-time document cleanup live here instead of duplicated between ApiService's endpoints and
+    // Blazor's pages.
     builder.Services.AddScoped<DocumentUploadService>();
     builder.Services.AddScoped<QueueCompletionService>();
+    builder.Services.AddScoped<QueueCancellationService>();
 
     return builder;
   }

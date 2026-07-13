@@ -32,7 +32,7 @@ flowchart TB
         sqlite[("SQLite<br/>(EF Core)")]
     end
 
-    checkin -- "REST: POST /checkin, upload<br/>SignalR: QueueUpdated (+ polling fallback)" --> api
+    checkin -- "REST: POST /checkin, upload, cancel<br/>SignalR: QueueUpdated (+ polling fallback)" --> api
     staff -- "REST: call-next / complete<br/>SignalR: QueueUpdated" --> api
     display -- "SignalR: QueueUpdated" --> api
     blazor -. "SignalR only: QueueUpdated (live push)<br/>+ NotifyMutation (after a local write)" .-> api

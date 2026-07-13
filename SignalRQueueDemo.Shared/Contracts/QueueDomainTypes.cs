@@ -8,7 +8,8 @@ public enum QueueStatus
 {
   Waiting,
   Serving,
-  Completed
+  Completed,
+  Cancelled
 }
 
 /// <summary>

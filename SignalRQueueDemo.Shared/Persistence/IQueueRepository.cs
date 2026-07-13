@@ -32,6 +32,11 @@ public interface IQueueRepository
   Task<QueueOperationResult> CompleteAsync(string entryId, CancellationToken ct = default);
 
   /// <summary>
+  /// Moves the given <see cref="QueueStatus.Waiting"/> or <see cref="QueueStatus.Serving"/> entry to <see cref="QueueStatus.Cancelled"/>.
+  /// </summary>
+  Task<QueueOperationResult> CancelAsync(string entryId, CancellationToken ct = default);
+
+  /// <summary>
   /// Returns just the latest sequence number, without building a queue snapshot. Exists so the SignalR hub can
   /// hand a newly-connected client its baseline on connect (see <c>QueueHub.OnConnectedAsync</c>) with a single
   /// <c>MAX(SequenceNumber)</c> read instead of materializing and discarding the whole queue via

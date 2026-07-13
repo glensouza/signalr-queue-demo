@@ -13,6 +13,7 @@ export enum QueueStatus {
   Waiting = 0,
   Serving = 1,
   Completed = 2,
+  Cancelled = 3,
 }
 
 /** Mirrors SignalRQueueDemo.Contracts.QueueEntry. */

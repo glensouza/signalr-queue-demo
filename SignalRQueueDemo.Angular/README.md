@@ -21,9 +21,9 @@ The visitor-facing kiosk: check in, watch your live place in line, optionally at
 
 - `App` — the shell/state machine. Holds one `checkInResult` signal: null → show the form, non-null → show the position view. Starts `QueueHubService` once, at the shell level, so the reconnect/catch-up machinery survives across the phase change.
 - `CheckInForm` — name + auto-suggested (editable, obviously-fake) ticket number. Emits the created entry on success.
-- `PositionView` — binds straight to `QueueHubService`'s signals to render the live position; auto-resets on completion.
+- `PositionView` — binds straight to `QueueHubService`'s signals to render the live position; auto-resets on completion. "Stop tracking" drops the card locally *and* cancels the entry on the backend (best-effort, fire-and-forget) so the visitor also leaves the staff queue rather than lingering in it.
 - `DocumentUpload` — validates type/size client-side (mirroring the server) then uploads.
-- `KioskCheckInService` — app-local orchestration of the two token-gated calls (check-in, upload): fetch a fresh check-in token immediately before each, never cache one. Lives here, not in `shared`, because token-hold policy is a UI-flow concern the shared `QueueApiService` deliberately stays out of.
+- `KioskCheckInService` — app-local orchestration of the three token-gated calls (check-in, upload, cancel): fetch a fresh check-in token immediately before each, never cache one. Lives here, not in `shared`, because token-hold policy is a UI-flow concern the shared `QueueApiService` deliberately stays out of.
 
 **Why position comes from the snapshot, not the check-in response.** `POST /checkin` returns a one-shot position, but people ahead get served while a visitor waits, so `PositionView` recomputes place from the authoritative `QueueHubService` snapshot on every live push / catch-up / poll. The check-in response's position is used only as a seed for the brief window before the snapshot first reflects the new entry.
 

@@ -197,6 +197,51 @@ public sealed class TableStorageQueueRepository : IQueueRepository
       $"Could not complete queue entry '{entryId}' after {MaxOptimisticConcurrencyAttempts} optimistic-concurrency attempts.");
   }
 
+  public async Task<QueueOperationResult> CancelAsync(string entryId, CancellationToken ct = default)
+  {
+    for (int attempt = 0; attempt < MaxOptimisticConcurrencyAttempts; attempt++)
+    {
+      QueueEntryTableEntity? entity;
+      try
+      {
+        Response<QueueEntryTableEntity> response = await this.entriesTable.GetEntityAsync<QueueEntryTableEntity>(
+          QueueEntryTableEntity.PartitionKeyValue, entryId, cancellationToken: ct);
+        entity = response.Value;
+      }
+      catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
+      {
+        return QueueOperationResult.Failure(QueueOperationOutcome.EntryNotFound);
+      }
+
+      if (entity.Status == nameof(QueueStatus.Completed) || entity.Status == nameof(QueueStatus.Cancelled))
+      {
+        return QueueOperationResult.Failure(QueueOperationOutcome.InvalidState);
+      }
+
+      string oldStatus = entity.Status;
+      entity.Status = nameof(QueueStatus.Cancelled);
+
+      try
+      {
+        await this.entriesTable.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace, ct);
+      }
+      catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.PreconditionFailed)
+      {
+        continue;
+      }
+
+      if (oldStatus == nameof(QueueStatus.Waiting))
+      {
+        await this.AdjustCounterAsync(QueueCounterTableEntity.WaitingCountRowKey, delta: -1, ct);
+      }
+
+      return QueueOperationResult.Success(await this.RecordChangeAndBuildUpdateAsync(entity, ct));
+    }
+
+    throw new InvalidOperationException(
+      $"Could not cancel queue entry '{entryId}' after {MaxOptimisticConcurrencyAttempts} optimistic-concurrency attempts.");
+  }
+
   public async Task<long> GetLatestSequenceAsync(CancellationToken ct = default) =>
     await this.ReadCounterAsync(QueueCounterTableEntity.SequenceRowKey, ct);
 
