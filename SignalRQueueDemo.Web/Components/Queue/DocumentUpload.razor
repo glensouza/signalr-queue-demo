@@ -1,33 +1,37 @@
 @using Microsoft.AspNetCore.Components.Forms
 @inject DocumentUploadService UploadService
-@inject QueueRealtimeService Realtime
+<section class="document-upload">
+    <h2>Add a document (optional)</h2>
+    <p class="hint">PDF, JPEG, or PNG, up to @(DocumentUploadService.MaxDocumentSizeBytes / 1024 / 1024)&nbsp;MB.</p>
 
-<div class="document-upload">
-    <label for="document-file">Attach a supporting document (PDF, JPG, or PNG, up to 10 MB)</label>
-    <InputFile id="document-file" OnChange="HandleFileSelectedAsync" accept=".pdf,.jpg,.jpeg,.png" disabled="@uploading" />
+    <!-- A styled <label> wrapping a visually-hidden <InputFile> gives a big, kiosk-friendly touch target
+         while still using the native file picker (no custom drag-drop plumbing this POC doesn't need). -->
+    <label class="upload-button @(this.uploading ? "disabled" : "")">
+        @(this.uploading ? "Uploading…" : "Choose file")
+        <InputFile class="visually-hidden" OnChange="this.HandleFileSelectedAsync" accept="@string.Join(",", DocumentUploadService.AllowedContentTypes)" disabled="@this.uploading" />
+    </label>
 
-    @if (uploading)
+    @if (this.errorMessage is not null)
     {
-        <p>Uploading…</p>
+        <p class="error" role="alert">@this.errorMessage</p>
     }
-    @if (errorMessage is not null)
+
+    @if (this.uploadedFileNames.Count > 0)
     {
-        <p class="upload-error">@errorMessage</p>
-    }
-    @if (uploadedFileNames.Count > 0)
-    {
-        <ul class="uploaded-files">
-            @foreach (string name in uploadedFileNames)
+        <ul class="uploaded-list">
+            @foreach (string name in this.uploadedFileNames)
             {
-                <li>@name</li>
+                <li>✓ @name</li>
             }
         </ul>
     }
-</div>
+</section>
 
 @code {
     [Parameter, EditorRequired]
     public string EntryId { get; set; } = string.Empty;
+
+    [Inject] private QueueRealtimeService Realtime { get; set; } = default!;
 
     private bool uploading;
     private string? errorMessage;

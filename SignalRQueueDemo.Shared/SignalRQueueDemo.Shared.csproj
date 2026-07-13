@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.9" />
+    <PackageReference Include="Net.Codecrete.QrCodeGenerator" Version="3.0.0" />
     <!-- Direct pin to override the vulnerable SQLitePCLRaw.bundle_e_sqlite3 2.1.11 (bundled SQLite < 3.50.2)
          pulled in transitively by Microsoft.EntityFrameworkCore.Sqlite (GHSA-2m69-gcr7-jv3q / CVE-2025-6965). -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />

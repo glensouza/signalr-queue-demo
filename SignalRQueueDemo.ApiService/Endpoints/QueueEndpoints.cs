@@ -61,6 +61,20 @@ public static class QueueEndpoints
       .RequireCors(CorsPolicies.KnownFrontends);
     app.MapGet("/queue/since/{sequenceNumber:long}", HandleGetSinceAsync)
       .RequireCors(CorsPolicies.KnownFrontends);
+    app.MapGet("/checkin/qr", HandleGetQrCode)
+      .RequireCors(CorsPolicies.KnownFrontends);
+  }
+
+  private static IResult HandleGetQrCode(IConfiguration config)
+  {
+      string? url = config["PublicCheckinUrl"];
+      if (string.IsNullOrWhiteSpace(url))
+      {
+          return Results.NotFound("Public check-in URL is not configured.");
+      }
+
+      string svg = SignalRQueueDemo.Shared.QrCodeHelper.GenerateSvg(url);
+      return Results.Content(svg, "image/svg+xml");
   }
 
   /// <summary>

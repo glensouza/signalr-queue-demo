@@ -2,28 +2,31 @@
 @inject IConfiguration Configuration
 
 <div class="staff-sign-in">
-    <h2>Staff Sign In</h2>
+    <div class="sign-in-box">
+        <h2>Staff Sign In</h2>
+        <p class="lede">Enter your staff key to access the queue management console.</p>
 
-    <EditForm Model="this" OnValidSubmit="this.HandleSignInAsync">
-        <div>
-            <label for="staffKey">Staff key</label>
-            <InputText id="staffKey" type="password" @bind-Value="this.enteredKey" />
-        </div>
+        <EditForm Model="this" OnValidSubmit="this.HandleSignInAsync">
+            <div class="field">
+                <label class="field-label" for="staffKey">Staff key</label>
+                <InputText class="field-input" id="staffKey" type="password" @bind-Value="this.enteredKey" />
+            </div>
 
-        @if (this.errorMessage is not null)
-        {
-            <p class="sign-in-error">@this.errorMessage</p>
-        }
+            @if (this.errorMessage is not null)
+            {
+                <p class="error" role="alert">@this.errorMessage</p>
+            }
 
-        <button type="submit">Sign in</button>
-    </EditForm>
+            <button type="submit" class="primary-button">Sign in</button>
+        </EditForm>
 
-    <!--
-      Deliberately doesn't say what the key IS — just where a real deployment keeps it (StaffAuth:Key, via
-      user-secrets/environment; see CLAUDE.md's "no secrets in source control"). Models the internal-vs-public
-      trust boundary the same way ApiService's StaffAuthFilter does; production replaces both with Entra ID.
-    -->
-    <p class="sign-in-hint">Ask a supervisor for the staff key (configured as <code>StaffAuth:Key</code>).</p>
+        <!--
+          Deliberately doesn't say what the key IS — just where a real deployment keeps it (StaffAuth:Key, via
+          user-secrets/environment; see CLAUDE.md's "no secrets in source control"). Models the internal-vs-public
+          trust boundary the same way ApiService's StaffAuthFilter does; production replaces both with Entra ID.
+        -->
+        <p class="sign-in-hint">Ask a supervisor for the staff key (configured as <code>StaffAuth:Key</code>).</p>
+    </div>
 </div>
 
 @code {

@@ -1,0 +1,31 @@
+@inject IConfiguration Configuration
+
+@if (this.CheckInUrl is not null)
+{
+    <aside class="check-in-cta">
+        <p class="cta-label">Check in from your phone</p>
+        @if (this.QrSvg is not null)
+        {
+            <div class="cta-qr">
+                @((MarkupString)this.QrSvg)
+            </div>
+        }
+        <p class="cta-url">@this.CheckInUrl</p>
+    </aside>
+}
+
+@code {
+    private string? CheckInUrl => Configuration["PublicCheckinUrl"];
+    
+    private string? QrSvg
+    {
+        get
+        {
+            if (this.CheckInUrl is not null)
+            {
+                return SignalRQueueDemo.Shared.QrCodeHelper.GenerateSvg(this.CheckInUrl);
+            }
+            return null;
+        }
+    }
+}

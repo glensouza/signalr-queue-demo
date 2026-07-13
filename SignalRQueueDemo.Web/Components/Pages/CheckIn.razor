@@ -5,40 +5,54 @@
 
 <PageTitle>Check In</PageTitle>
 
-<h1>Check In</h1>
 
+<main class="kiosk">
 @if (this.ShowForm)
 {
-    <EditForm Model="this.formModel" OnValidSubmit="this.HandleCheckInAsync">
+    <EditForm Model="this.formModel" OnValidSubmit="this.HandleCheckInAsync" class="check-in-form">
         <DataAnnotationsValidator />
         <ValidationSummary />
 
-        <div>
-            <label for="displayName">Name</label>
-            <InputText id="displayName" @bind-Value="this.formModel.DisplayName" />
+        <h1>Check in</h1>
+        <p class="lede">Enter your name to join the queue.</p>
+
+        <div class="field">
+            <label class="field-label" for="displayName">Your name</label>
+            <InputText class="field-input" id="displayName" @bind-Value="this.formModel.DisplayName" autocomplete="off" disabled="@this.submitting" />
         </div>
-        <div>
-            <label for="ticketNumber">Ticket number</label>
-            <InputText id="ticketNumber" @bind-Value="this.formModel.TicketNumber" />
+        <div class="field">
+            <label class="field-label" for="ticketNumber">Ticket number</label>
+            <InputText class="field-input" id="ticketNumber" @bind-Value="this.formModel.TicketNumber" autocomplete="off" disabled="@this.submitting" />
         </div>
 
         @if (this.errorMessage is not null)
         {
-            <p class="check-in-error">@this.errorMessage</p>
+            <p class="error" role="alert">@this.errorMessage</p>
         }
 
-        <button type="submit" disabled="@this.submitting">Check in</button>
+        <button type="submit" class="primary-button" disabled="@this.submitting">
+            @(this.submitting ? "Checking in…" : "Check in")
+        </button>
     </EditForm>
+    @if (this.trackedCheckIns.Count > 0)
+    {
+        <button class="secondary-button" type="button" @onclick="() => this.addingAnother = false">
+            Back to my @(this.trackedCheckIns.Count == 1 ? "check-in" : "check-ins")
+        </button>
+    }
 }
 else
 {
-    @foreach ((string entryId, (int position, QueueEntry entry)) in this.trackedCheckIns)
-    {
-        <PositionView EntryId="entryId" SeedPosition="position" SeedEntry="entry" OnFinished="() => this.RemoveTrackedCheckIn(entryId)" />
-    }
+    <div class="tracked-list">
+        @foreach ((string entryId, (int position, QueueEntry entry)) in this.trackedCheckIns)
+        {
+            <PositionView EntryId="@entryId" SeedPosition="@position" SeedEntry="@entry" OnFinished="() => this.RemoveTrackedCheckIn(entryId)" />
+        }
+    </div>
 
-    <button type="button" @onclick="this.ShowFormForAnother">Check in another visitor</button>
+    <button type="button" class="primary-button" @onclick="this.ShowFormForAnother">Check someone else in</button>
 }
+</main>
 
 @code {
     // Kiosk-friendly auto-reset: the form comes back after every completed check-in unless the visitor explicitly

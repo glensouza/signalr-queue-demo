@@ -136,6 +136,15 @@ IResourceBuilder<ContainerResource> queueDisplay = builder
     .WithEnvironment("PUBLIC_CHECKIN_URL", publicCheckin.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork))
     .WaitFor(apiService);
 
+// Now that publicCheckin is declared, inject its URL into the API (so it can generate the QR code) 
+// and Blazor (so it can display its own QR code component).
+apiService.WithEnvironment("PublicCheckinUrl", publicCheckin.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork));
+
+var webfrontend = (IResourceBuilder<ProjectResource>)builder.Resources.FirstOrDefault(r => r.Name == "webfrontend");
+if (webfrontend != null) {
+    webfrontend.WithEnvironment("PublicCheckinUrl", publicCheckin.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork));
+}
+
 // CORS coordination is deliberately NOT done here by injecting the Angular containers' origins into apiService.
 // That was tried and it silently failed in a real browser: Aspire serves each container under its own
 // `*.dev.localhost` hostname (observed: http://public-checkin-signalrqueuedemo.dev.localhost:{port}), but an

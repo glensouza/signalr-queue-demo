@@ -1,0 +1,22 @@
+.staff-console {
+  padding: 3rem 2rem;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.staff-console app-staff-sign-in {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+  max-width: 36rem;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.staff-console app-queue-console {
+  display: block;
+  flex: 1;
+}
+

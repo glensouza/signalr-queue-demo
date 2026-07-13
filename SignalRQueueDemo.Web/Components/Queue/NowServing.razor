@@ -2,21 +2,24 @@
 @inject QueueRealtimeService Realtime
 
 <section class="now-serving">
-    <h2>Now Serving</h2>
+    <h2 class="section-title">Now Serving</h2>
 
-    @if (this.ServingEntries.Count == 0)
-    {
-        <p>No one is currently being served.</p>
-    }
-    else
-    {
-        <ul>
+    <div class="entries">
+        @if (this.ServingEntries.Count == 0)
+        {
+            <p class="empty-state">No one is currently being served.</p>
+        }
+        else
+        {
             @foreach (QueueEntry entry in this.ServingEntries)
             {
-                <li>@entry.TicketNumber — @PublicName.ToPublicName(entry.DisplayName)</li>
+                <div class="entry ticket-card">
+                    <div class="ticket-number">@entry.TicketNumber</div>
+                    <div class="entry-name">@PublicName.ToPublicName(entry.DisplayName)</div>
+                </div>
             }
-        </ul>
-    }
+        }
+    </div>
 </section>
 
 @code {

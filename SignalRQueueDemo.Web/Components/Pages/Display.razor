@@ -4,15 +4,25 @@
 
 <PageTitle>Queue Display</PageTitle>
 
-<h1>Queue Display</h1>
+<main class="board">
+    <div class="board-grid">
+        <div class="now-serving-section">
+            <NowServing />
+        </div>
+        <div class="waiting-section">
+            <WaitingList />
+        </div>
+    </div>
 
-@if (Realtime.ConnectionState == QueueConnectionState.Polling)
-{
-    <p class="reconnecting-banner">Reconnecting…</p>
-}
+    @if (Realtime.ConnectionState == QueueConnectionState.Polling)
+    {
+        <div class="reconnecting-banner">
+            <p>Reconnecting…</p>
+        </div>
+    }
 
-<NowServing />
-<WaitingList />
+    <CheckInQr />
+</main>
 
 @code {
     protected override async Task OnInitializedAsync()
