@@ -5,18 +5,11 @@
   flex-direction: column;
 }
 
-.staff-console app-staff-sign-in {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex: 1;
-  max-width: 36rem;
-  margin: 0 auto;
-  width: 100%;
-}
-
-.staff-console app-queue-console {
-  display: block;
+/* The child components render their own root <div> (.staff-sign-in / .queue-console) directly — Blazor has no
+   `app-staff-sign-in` custom element to select (that was an Angular-ism that silently matched nothing here). Reach
+   the child roots with ::deep; the sign-in wrapper handles its own centering (see StaffSignIn.razor.css). */
+.staff-console ::deep .staff-sign-in,
+.staff-console ::deep .queue-console {
   flex: 1;
 }
 

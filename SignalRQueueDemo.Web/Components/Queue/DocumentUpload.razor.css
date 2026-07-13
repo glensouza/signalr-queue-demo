@@ -54,16 +54,8 @@
   filter: grayscale(1);
 }
 
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border: 0;
-}
+/* .visually-hidden is GLOBAL in theme.css — it targets the <input> rendered by <InputFile>, which CSS isolation
+   never scopes, so a scoped copy here would leave the native file picker visible next to the styled label. */
 
 .error {
   margin: 0;

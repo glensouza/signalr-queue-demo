@@ -6,17 +6,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
-    <link rel="stylesheet" href="@Assets["theme.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
+    @* theme.css after app.css (and bootstrap) on purpose: it is the design system and must win over the default
+       Blazor template's app.css — otherwise app.css's `html,body{font-family:Helvetica}` overrides the dark
+       theme's Inter, etc. The scoped-component bundle stays last so a component can still override a global. *@
+    <link rel="stylesheet" href="@Assets["theme.css"]" />
     <link rel="stylesheet" href="@Assets["SignalRQueueDemo.Web.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
-    <HeadOutlet />
+    <HeadOutlet @rendermode="InteractiveServerNoPrerender" />
 </head>
 
 <body>
-    <Routes />
+    <Routes @rendermode="InteractiveServerNoPrerender" />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 
 </html>
+
+@code {
+    // Global interactive-server render mode for the whole routed app. Without a render mode the components render
+    // as STATIC SSR — which is why the EditForm submits POST and hit "The POST request does not specify which form
+    // is being submitted", and why buttons / live updates never worked. Every page here depends on circuit-only
+    // features (QueueRealtimeService holds a per-circuit SignalR HubConnection; the check-in and staff pages use
+    // interactive EditForm submits), so interactivity isn't optional for any of them.
+    //
+    // Prerender is OFF deliberately: prerendering would run those circuit-scoped services during the stateless SSR
+    // pass (an extra hub connect per load) AND render the forms as static HTML that can POST if submitted before
+    // hydration — reintroducing the exact @formname error. With prerender off each page renders once, interactively,
+    // so there is no static-form window at all. The brief first-paint loading state is fine for these kiosk/board
+    // screens.
+    private static readonly InteractiveServerRenderMode InteractiveServerNoPrerender = new(prerender: false);
+}

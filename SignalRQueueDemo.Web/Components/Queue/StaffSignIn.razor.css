@@ -1,7 +1,21 @@
+/* Outer wrapper: centers the card in whatever space the Staff page gives it. (The Staff page can't center it from
+   its own CSS because Blazor renders this component's root <div> directly — there is no `app-staff-sign-in` custom
+   element for an ancestor selector to hook, unlike Angular.) */
 .staff-sign-in {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+/* The actual sign-in card. */
+.sign-in-box {
   display: flex;
   flex-direction: column;
   gap: 2rem;
+  width: 100%;
+  max-width: 30rem;
   background: var(--glass-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -9,7 +23,6 @@
   border-radius: var(--radius-lg);
   padding: 3rem 2.5rem;
   box-shadow: var(--shadow-glass);
-  width: 100%;
 }
 
 .staff-sign-in h2 {
@@ -27,36 +40,9 @@
   text-align: center;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.field-label {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.field-input {
-  min-height: 3.5rem;
-  padding: 0 1rem;
-  font-size: 1.25rem;
-  font-family: inherit;
-  color: var(--text-primary);
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-md);
-  transition: var(--transition);
-}
-
-.field-input:focus {
-  outline: none;
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15);
-  background: rgba(0, 0, 0, 0.3);
-}
+/* .field, .field-label, .field-input are GLOBAL in theme.css — .field-input styles the <input> rendered by
+   <InputText>, which CSS isolation never scopes. Only the plain-HTML elements written in StaffSignIn.razor stay
+   scoped here. */
 
 .error {
   margin: 0;
@@ -83,11 +69,6 @@
   background: rgba(255, 255, 255, 0.1);
   border-radius: 0.25rem;
   color: var(--text-primary);
-}
-
-.field-input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .primary-button {
