@@ -64,6 +64,8 @@ public static class QueueEndpoints
       .RequireCors(CorsPolicies.KnownFrontends);
     app.MapGet("/checkin/qr", HandleGetQrCode)
       .RequireCors(CorsPolicies.KnownFrontends);
+    app.MapGet("/checkin/url", HandleGetCheckInUrl)
+      .RequireCors(CorsPolicies.KnownFrontends);
   }
 
   /// <summary>
@@ -81,6 +83,24 @@ public static class QueueEndpoints
 
     string svg = QrCodeHelper.GenerateSvg(url);
     return Results.Content(svg, "image/svg+xml");
+  }
+
+  /// <summary>
+  /// Serves the plain public check-in URL text that pairs with <see cref="HandleGetQrCode"/>. The API is the single
+  /// source of this value (it's the only place <c>PublicCheckinUrl</c> is configured), so the queue-display board
+  /// reads both the URL and its QR from here rather than having the same address injected separately into the
+  /// board's own container config. Returns 404 when unconfigured, so the board omits the whole call-to-action —
+  /// same honest "not set up" signal as the QR endpoint.
+  /// </summary>
+  private static IResult HandleGetCheckInUrl(IConfiguration config)
+  {
+    string? url = config["PublicCheckinUrl"];
+    if (string.IsNullOrWhiteSpace(url))
+    {
+      return Results.NotFound("Public check-in URL is not configured.");
+    }
+
+    return Results.Content(url, "text/plain");
   }
 
   /// <summary>

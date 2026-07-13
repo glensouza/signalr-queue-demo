@@ -40,6 +40,17 @@ export class QueueApiService {
     return this.httpClient.get<CheckInTokenResponse>(`${this.baseUrl}/checkin/token`);
   }
 
+  /**
+   * GET /checkin/url — the public-checkin app's URL, as plain text. The API is the single source of this value
+   * (it's the only place `PublicCheckinUrl` is configured), so the queue-display board reads it from here and
+   * pairs it with the QR image at `${baseUrl}/checkin/qr` — rather than having the same address injected
+   * separately into the board's own config.json. Errors (e.g. 404) when the API has no check-in URL configured;
+   * the board then omits the "check in from your phone" call-to-action entirely.
+   */
+  getCheckInUrl(): Observable<string> {
+    return this.httpClient.get(`${this.baseUrl}/checkin/url`, { responseType: 'text' });
+  }
+
   /** POST /checkin — creates a queue entry. `checkInToken` must be a value freshly issued by {@link getCheckInToken}. */
   checkIn(request: CheckInRequest, checkInToken: string): Observable<CheckInResponse> {
     return this.httpClient.post<CheckInResponse>(`${this.baseUrl}/checkin`, request, {

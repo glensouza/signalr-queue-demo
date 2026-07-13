@@ -1,9 +1,7 @@
-@if (checkInUrl) {
+@if (checkInUrl(); as url) {
   <aside class="check-in-cta">
     <p class="cta-label">Check in from your phone</p>
-    @if (qrDataUrl) {
-      <img class="cta-qr" [src]="qrDataUrl" alt="QR code linking to the check-in page" />
-    }
-    <p class="cta-url">{{ checkInUrl }}</p>
+    <img class="cta-qr" [src]="qrImageUrl" alt="QR code linking to the check-in page" />
+    <p class="cta-url">{{ url }}</p>
   </aside>
 }

@@ -17,18 +17,11 @@ if [ -z "${API_BASE_URL:-}" ]; then
     exit 1
 fi
 
-# Hand-built JSON, not a templating tool: RuntimeConfig (runtime-config.ts) is a tiny fixed shape, and every value
-# here is an Aspire-supplied endpoint URL (scheme://host:port), never client input, so there's no untrusted content
-# needing escaping. PUBLIC_CHECKIN_URL is optional — only queue-display's container is given it (for its check-in
-# QR/link); when it's unset the field is omitted entirely rather than written as an empty/"null" string.
-if [ -n "${PUBLIC_CHECKIN_URL:-}" ]; then
-    cat > /usr/share/nginx/html/config.json <<EOF
-{"apiBaseUrl":"${API_BASE_URL}","publicCheckinUrl":"${PUBLIC_CHECKIN_URL}"}
-EOF
-    echo "write-runtime-config.sh: wrote config.json with apiBaseUrl=${API_BASE_URL} publicCheckinUrl=${PUBLIC_CHECKIN_URL}"
-else
-    cat > /usr/share/nginx/html/config.json <<EOF
+# Hand-built JSON, not a templating tool: RuntimeConfig (runtime-config.ts) is a tiny fixed shape (just apiBaseUrl),
+# and the value here is an Aspire-supplied endpoint URL (scheme://host:port), never client input, so there's no
+# untrusted content needing escaping. The queue-display board's check-in URL/QR is no longer injected here — it
+# reads both from the API (GET /checkin/url, GET /checkin/qr), so every app's config.json is now identical.
+cat > /usr/share/nginx/html/config.json <<EOF
 {"apiBaseUrl":"${API_BASE_URL}"}
 EOF
-    echo "write-runtime-config.sh: wrote config.json with apiBaseUrl=${API_BASE_URL}"
-fi
+echo "write-runtime-config.sh: wrote config.json with apiBaseUrl=${API_BASE_URL}"

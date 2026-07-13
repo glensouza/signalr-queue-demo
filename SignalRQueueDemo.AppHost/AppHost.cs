@@ -131,11 +131,9 @@ IResourceBuilder<ContainerResource> queueDisplay = builder
     .WithHttpEndpoint(targetPort: 80, name: "http")
     .WithExternalHttpEndpoints()
     .WithEnvironment("API_BASE_URL", apiHttpEndpoint)
-    // Only queue-display gets the public-checkin URL: it renders it as a "check in from your phone" QR code + link
-    // (see CheckInQr / docker/write-runtime-config.sh). Same LocalhostNetwork reasoning as apiHttpEndpoint — the
-    // value must be a host-reachable URL, not a container-network address. publicCheckin is declared above, so its
-    // endpoint is referenceable here; this is a reference only (no WaitFor), so it introduces no startup ordering.
-    .WithEnvironment("PUBLIC_CHECKIN_URL", publicCheckin.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork))
+    // queue-display no longer gets the public-checkin URL injected: its "check in from your phone" QR + link now
+    // come from the API (GET /checkin/url + GET /checkin/qr, see CheckInQr), so all three containers get the
+    // identical API_BASE_URL-only config. The API is the single source of that address (injected just below).
     .WaitFor(apiService);
 
 // publicCheckin is declared above, so its endpoint is now referenceable. Inject its host-reachable URL

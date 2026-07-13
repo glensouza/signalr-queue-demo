@@ -7,14 +7,10 @@ export interface RuntimeConfig {
   /**
    * Origin (scheme + host + port, no trailing slash) of SignalRQueueDemo.ApiService — used as the base for both
    * QueueApiService's REST calls and QueueHubService's `/hubs/queue` connection. e.g. "http://localhost:5410".
+   *
+   * <p>This is the ONLY field every app needs. The queue-display board's "check in from your phone" URL used to
+   * live here too, but it now comes from the API (`GET /checkin/url` + `GET /checkin/qr`) so the API stays the
+   * single source of the public-checkin address — see CheckInQr in the queue-display app.</p>
    */
   readonly apiBaseUrl: string;
-
-  /**
-   * URL of the public-checkin kiosk app, for the queue-display board to render as a "check in here" QR code and
-   * link. Optional because only queue-display's container is given it (via the PUBLIC_CHECKIN_URL env var the
-   * AppHost injects from public-checkin's endpoint); the other apps' config.json omits it entirely. Undefined
-   * means "don't render the check-in call-to-action" rather than an error. e.g. "http://localhost:53592".
-   */
-  readonly publicCheckinUrl?: string;
 }
