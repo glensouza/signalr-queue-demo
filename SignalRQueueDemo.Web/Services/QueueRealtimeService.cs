@@ -184,7 +184,27 @@ public sealed class QueueRealtimeService(
     string hubUrl = $"{this.navigationManager.BaseUri}hubs/queue";
 
     this.connection = new HubConnectionBuilder()
-      .WithUrl(hubUrl)
+      .WithUrl(hubUrl, options =>
+      {
+        // This is a loopback connection to our OWN in-process hub. Under `aspire run` the app is served over HTTPS,
+        // so the server-to-self connection has to validate the ASP.NET Core dev certificate — which fails in some
+        // setups and silently drops the client to polling forever (the persistent "Reconnecting…" banner on every
+        // page). Trusting our own machine's certificate for a same-process loopback is safe — the target is always
+        // NavigationManager.BaseUri, i.e. this very app — and without it the self-hosted-hub design only works over
+        // plain HTTP. Both the negotiate (HTTP) request and the WebSocket transport need the override.
+        options.HttpMessageHandlerFactory = handler =>
+        {
+          if (handler is HttpClientHandler httpClientHandler)
+          {
+            httpClientHandler.ServerCertificateCustomValidationCallback =
+              HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+          }
+
+          return handler;
+        };
+        options.WebSocketConfiguration = socket =>
+          socket.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+      })
       .WithAutomaticReconnect(ReconnectDelays)
       .Build();
 
