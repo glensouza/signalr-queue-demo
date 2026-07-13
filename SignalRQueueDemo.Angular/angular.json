@@ -48,6 +48,11 @@
               {
                 "glob": "**/*",
                 "input": "projects/public-checkin/public"
+              },
+              {
+                "glob": "inter-variable.woff2",
+                "input": "projects/shared/src/fonts",
+                "output": "fonts"
               }
             ],
             "styles": ["projects/public-checkin/src/styles.css"]
@@ -112,6 +117,11 @@
               {
                 "glob": "**/*",
                 "input": "projects/internal-queue/public"
+              },
+              {
+                "glob": "inter-variable.woff2",
+                "input": "projects/shared/src/fonts",
+                "output": "fonts"
               }
             ],
             "styles": ["projects/internal-queue/src/styles.css"]
@@ -176,6 +186,11 @@
               {
                 "glob": "**/*",
                 "input": "projects/queue-display/public"
+              },
+              {
+                "glob": "inter-variable.woff2",
+                "input": "projects/shared/src/fonts",
+                "output": "fonts"
               }
             ],
             "styles": ["projects/queue-display/src/styles.css"]

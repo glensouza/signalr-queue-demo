@@ -1,4 +1,15 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+/* Inter is self-hosted, NOT hot-linked from fonts.googleapis.com. A runtime @import to Google Fonts is a live
+   third-party call every page load, which the court no-external-calls constraint forbids (and would leak that the
+   kiosk is running). The variable woff2 (latin subset, weights 100-900 in one file) lives in this shared library
+   at src/fonts/ and is copied to each app's /fonts/ by its angular.json "assets" entry. font-display: swap renders
+   immediately in the fallback and swaps Inter in when ready. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/inter-variable.woff2') format('woff2');
+}
 
 :root {
   --bg-primary: #09090b;
