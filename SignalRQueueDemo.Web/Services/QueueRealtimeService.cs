@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.SignalR.Client;
 using SignalRQueueDemo.Contracts;
 using SignalRQueueDemo.Shared.Persistence;
@@ -47,6 +49,7 @@ public enum QueueConnectionState
 public sealed class QueueRealtimeService(
   IQueueRepository repository,
   NavigationManager navigationManager,
+  IServer server,
   ILogger<QueueRealtimeService> logger) : IAsyncDisposable
 {
   // Same backoff schedule and cutoffs as the Angular reference client, so the two stacks behave identically for
@@ -61,6 +64,7 @@ public sealed class QueueRealtimeService(
 
   private readonly IQueueRepository repository = repository;
   private readonly NavigationManager navigationManager = navigationManager;
+  private readonly IServer server = server;
   private readonly ILogger<QueueRealtimeService> logger = logger;
 
   /// <summary>
@@ -173,15 +177,43 @@ public sealed class QueueRealtimeService(
     }
   }
 
+  /// <summary>
+  /// The URL of our own <c>/hubs/queue</c> to loopback-connect to. Deliberately the app's own Kestrel bind
+  /// address (<see cref="IServerAddressesFeature"/>), NOT <c>NavigationManager.BaseUri</c>: under <c>aspire run</c>
+  /// BaseUri is the browser-facing URL, which sits behind Aspire's DCP reverse proxy and is served over HTTPS. A
+  /// server-to-self connection back through that proxy/cert fails, which silently drops every page to polling
+  /// forever (the persistent "Reconnecting…" banner). The direct bind address skips the proxy, and preferring the
+  /// HTTP one skips certificate validation entirely. Falls back to BaseUri only if the server surfaces no address.
+  /// </summary>
+  private string ResolveHubUrl()
+  {
+    IServerAddressesFeature? addressesFeature = this.server.Features.Get<IServerAddressesFeature>();
+    string? address = addressesFeature?.Addresses
+      .OrderByDescending(a => a.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+      .FirstOrDefault();
+
+    if (string.IsNullOrEmpty(address))
+    {
+      return $"{this.navigationManager.BaseUri}hubs/queue";
+    }
+
+    // Kestrel may report a wildcard host (http://[::]:5000, http://0.0.0.0:5000, http://+:5000); a self-connection
+    // needs a concrete loopback host it can actually dial.
+    address = address
+      .Replace("://[::]", "://localhost", StringComparison.Ordinal)
+      .Replace("://0.0.0.0", "://localhost", StringComparison.Ordinal)
+      .Replace("://+", "://localhost", StringComparison.Ordinal);
+
+    return $"{address.TrimEnd('/')}/hubs/queue";
+  }
+
   private async Task ConnectHubOrFallBackToPollingAsync(CancellationToken ct)
   {
     // The hub is THIS app's own (mapped at /hubs/queue in Program.cs), not ApiService's — Blazor is fully
-    // self-encapsulated and has no dependency on the API process. So the connection target is simply this app's
-    // own base address, read from NavigationManager (BaseUri already ends with '/'). This is a same-process
-    // loopback connection: the Blazor Server host connects to its own Kestrel to receive the pushes its own hub
-    // fans out. BaseUri is always populated by the time a component's OnInitializedAsync triggers StartAsync, so
-    // no "not configured" fallback is needed the way the old cross-process service-discovery lookup required.
-    string hubUrl = $"{this.navigationManager.BaseUri}hubs/queue";
+    // self-encapsulated. This is a same-process loopback: the Blazor Server host connects to its own Kestrel to
+    // receive the pushes its own hub fans out. See ResolveHubUrl for why we target the app's own bind address
+    // rather than NavigationManager.BaseUri.
+    string hubUrl = this.ResolveHubUrl();
 
     this.connection = new HubConnectionBuilder()
       .WithUrl(hubUrl, options =>
