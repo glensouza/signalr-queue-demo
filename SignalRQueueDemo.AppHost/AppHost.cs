@@ -67,11 +67,20 @@ if (useAzureSignalR)
 }
 
 // tables/blobs + the QueueDb connection string: webfrontend needs the exact same storage wiring as apiService —
-// see the comment above apiService's own registration for why. WaitFor(apiService) additionally guarantees the
-// API has already run its startup schema-creation/seeding (see Program.cs) before Blazor's first repository
-// call, so Web's own Program.cs doesn't need to repeat that step.
-// Not captured in a variable: webfrontend is fully self-contained — its check-in QR points at its own /checkin
-// page (built from NavigationManager.BaseUri in CheckInQr.razor), so it needs no publicCheckin/API URL injected.
+// see the comment above apiService's own registration for why.
+//
+// WithReference(apiService) + WaitFor(apiService) are NOT leftovers, despite Blazor being "self-encapsulated":
+// that term only means Blazor does its data reads/writes directly through SignalRQueueDemo.Shared's repositories
+// instead of REST calls — it does NOT mean Blazor is isolated from the API process. Blazor still connects to the
+// SignalR hub, which is hosted in ApiService:
+//   - WithReference(apiService) injects the service-discovery key `services__apiservice__http__0` that
+//     QueueRealtimeService reads to build the hub URL (`{apiBaseUrl}/hubs/queue`). Without it, the service can't
+//     find the hub and permanently falls back to polling — no live pushes from other clients, no NotifyMutation.
+//   - WaitFor(apiService) guarantees the API has run its startup schema-creation/seeding (see Program.cs) before
+//     Blazor's first repository call, so Web's own Program.cs doesn't repeat that step; it also means the hub is
+//     up before Blazor tries to connect.
+// (What Blazor genuinely needs nothing for is the check-in QR — CheckInQr.razor points at Blazor's own /checkin
+// page via NavigationManager.BaseUri, so no publicCheckin/API URL is injected for that. Hence no variable capture.)
 builder.AddProject<Projects.SignalRQueueDemo_Web>("webfrontend")
     .WithReference(tables)
     .WaitFor(tables)
