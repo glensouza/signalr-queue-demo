@@ -1,31 +1,33 @@
+@using SignalRQueueDemo.Shared
 @inject IConfiguration Configuration
 
-@if (this.CheckInUrl is not null)
+@if (this.checkInUrl is not null)
 {
     <aside class="check-in-cta">
         <p class="cta-label">Check in from your phone</p>
-        @if (this.QrSvg is not null)
+        @if (this.qrSvg is not null)
         {
             <div class="cta-qr">
-                @((MarkupString)this.QrSvg)
+                @((MarkupString)this.qrSvg)
             </div>
         }
-        <p class="cta-url">@this.CheckInUrl</p>
+        <p class="cta-url">@this.checkInUrl</p>
     </aside>
 }
 
 @code {
-    private string? CheckInUrl => Configuration["PublicCheckinUrl"];
-    
-    private string? QrSvg
+    // The check-in URL and its QR never change for the app's lifetime, so both are computed once in
+    // OnInitialized rather than in property getters — the Display board re-renders on every QueueUpdated
+    // broadcast, and re-encoding the SVG on each of those renders would be pure wasted work.
+    private string? checkInUrl;
+    private string? qrSvg;
+
+    protected override void OnInitialized()
     {
-        get
+        this.checkInUrl = Configuration["PublicCheckinUrl"];
+        if (this.checkInUrl is not null)
         {
-            if (this.CheckInUrl is not null)
-            {
-                return SignalRQueueDemo.Shared.QrCodeHelper.GenerateSvg(this.CheckInUrl);
-            }
-            return null;
+            this.qrSvg = QrCodeHelper.GenerateSvg(this.checkInUrl);
         }
     }
 }

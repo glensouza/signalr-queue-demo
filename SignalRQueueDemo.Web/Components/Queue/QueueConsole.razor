@@ -57,18 +57,19 @@
             else
             {
                 <ul class="entry-list">
-                    @foreach (var item in this.WaitingEntries.Select((e, i) => new { Entry = e, Index = i }))
+                    @for (int i = 0; i < this.WaitingEntries.Count; i++)
                     {
+                        QueueEntry entry = this.WaitingEntries[i];
                         <li class="entry-row entry-waiting">
                             <div class="entry-header">
-                                <span class="position">#@(item.Index + 1)</span>
-                                <span class="ticket">@item.Entry.TicketNumber</span>
-                                <span class="name">@item.Entry.DisplayName</span>
+                                <span class="position">#@(i + 1)</span>
+                                <span class="ticket">@entry.TicketNumber</span>
+                                <span class="name">@entry.DisplayName</span>
                             </div>
-                            @if (item.Entry.DocumentCount > 0)
+                            @if (entry.DocumentCount > 0)
                             {
                                 <div class="entry-actions">
-                                    <button class="secondary-button" type="button" @onclick="() => this.selectedEntryId = item.Entry.Id">View documents (@item.Entry.DocumentCount)</button>
+                                    <button class="secondary-button" type="button" @onclick="() => this.selectedEntryId = entry.Id">View documents (@entry.DocumentCount)</button>
                                 </div>
                             }
                         </li>

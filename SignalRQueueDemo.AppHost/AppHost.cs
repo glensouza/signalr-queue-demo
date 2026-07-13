@@ -70,7 +70,7 @@ if (useAzureSignalR)
 // see the comment above apiService's own registration for why. WaitFor(apiService) additionally guarantees the
 // API has already run its startup schema-creation/seeding (see Program.cs) before Blazor's first repository
 // call, so Web's own Program.cs doesn't need to repeat that step.
-builder.AddProject<Projects.SignalRQueueDemo_Web>("webfrontend")
+IResourceBuilder<ProjectResource> webfrontend = builder.AddProject<Projects.SignalRQueueDemo_Web>("webfrontend")
     .WithReference(tables)
     .WaitFor(tables)
     .WithReference(blobs)
@@ -136,14 +136,15 @@ IResourceBuilder<ContainerResource> queueDisplay = builder
     .WithEnvironment("PUBLIC_CHECKIN_URL", publicCheckin.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork))
     .WaitFor(apiService);
 
-// Now that publicCheckin is declared, inject its URL into the API (so it can generate the QR code) 
-// and Blazor (so it can display its own QR code component).
-apiService.WithEnvironment("PublicCheckinUrl", publicCheckin.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork));
-
-var webfrontend = (IResourceBuilder<ProjectResource>)builder.Resources.FirstOrDefault(r => r.Name == "webfrontend");
-if (webfrontend != null) {
-    webfrontend.WithEnvironment("PublicCheckinUrl", publicCheckin.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork));
-}
+// publicCheckin is declared above, so its endpoint is now referenceable. Inject its host-reachable URL
+// (LocalhostNetwork-pinned, same reasoning as apiHttpEndpoint) into two resources that render a check-in QR:
+//   - apiService: the /checkin/qr endpoint encodes this URL into an SVG the Angular queue-display board fetches.
+//   - webfrontend (Blazor): its self-encapsulated CheckInQr component encodes the same URL in-process.
+// webfrontend is captured as a builder at its declaration above rather than looked up out of builder.Resources —
+// that collection holds IResource instances, not IResourceBuilder<T>, so a cast to the builder type throws.
+EndpointReference publicCheckinEndpoint = publicCheckin.GetEndpoint("http", KnownNetworkIdentifiers.LocalhostNetwork);
+apiService.WithEnvironment("PublicCheckinUrl", publicCheckinEndpoint);
+webfrontend.WithEnvironment("PublicCheckinUrl", publicCheckinEndpoint);
 
 // CORS coordination is deliberately NOT done here by injecting the Angular containers' origins into apiService.
 // That was tried and it silently failed in a real browser: Aspire serves each container under its own

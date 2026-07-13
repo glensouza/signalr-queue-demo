@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using SignalRQueueDemo.ApiService.Hubs;
 using SignalRQueueDemo.Contracts;
+using SignalRQueueDemo.Shared;
 using SignalRQueueDemo.Shared.Documents;
 using SignalRQueueDemo.Shared.Persistence;
 
@@ -65,16 +66,21 @@ public static class QueueEndpoints
       .RequireCors(CorsPolicies.KnownFrontends);
   }
 
+  /// <summary>
+  /// Serves the public check-in URL as a QR-code SVG for the Angular queue-display board to fetch and render.
+  /// The URL comes from the <c>PublicCheckinUrl</c> config the AppHost injects; when it isn't configured the board
+  /// simply omits the call-to-action, so a 404 (rather than an error page) is the honest response here.
+  /// </summary>
   private static IResult HandleGetQrCode(IConfiguration config)
   {
-      string? url = config["PublicCheckinUrl"];
-      if (string.IsNullOrWhiteSpace(url))
-      {
-          return Results.NotFound("Public check-in URL is not configured.");
-      }
+    string? url = config["PublicCheckinUrl"];
+    if (string.IsNullOrWhiteSpace(url))
+    {
+      return Results.NotFound("Public check-in URL is not configured.");
+    }
 
-      string svg = SignalRQueueDemo.Shared.QrCodeHelper.GenerateSvg(url);
-      return Results.Content(svg, "image/svg+xml");
+    string svg = QrCodeHelper.GenerateSvg(url);
+    return Results.Content(svg, "image/svg+xml");
   }
 
   /// <summary>

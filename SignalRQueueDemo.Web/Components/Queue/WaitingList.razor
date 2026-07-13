@@ -11,12 +11,13 @@
         }
         else
         {
-            @foreach (var item in this.WaitingEntries.Select((e, i) => new { Entry = e, Index = i }))
+            @for (int i = 0; i < this.WaitingEntries.Count; i++)
             {
+                QueueEntry entry = this.WaitingEntries[i];
                 <div class="entry">
-                    <div class="position">#@(item.Index + 1)</div>
-                    <div class="ticket-number">@item.Entry.TicketNumber</div>
-                    <div class="entry-name">@PublicName.ToPublicName(item.Entry.DisplayName)</div>
+                    <div class="position">#@(i + 1)</div>
+                    <div class="ticket-number">@entry.TicketNumber</div>
+                    <div class="entry-name">@PublicName.ToPublicName(entry.DisplayName)</div>
                 </div>
             }
         }
