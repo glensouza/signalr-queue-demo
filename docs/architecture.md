@@ -20,7 +20,7 @@ flowchart TB
             staff["internal-queue<br/>(Angular · nginx container)"]
         end
 
-        blazor["SignalRQueueDemo.Web<br/>Blazor Server — same 3 experiences,<br/>self-encapsulated (shared library, no REST calls)"]
+        blazor["SignalRQueueDemo.Web<br/>Blazor Server — same 3 experiences,<br/>fully self-encapsulated: own QueueHub,<br/>own SQLite file, no dependency on the API"]
 
         api["SignalRQueueDemo.ApiService<br/>Minimal API + QueueHub (SignalR, self-hosted)"]
 
@@ -35,29 +35,35 @@ flowchart TB
     checkin -- "REST: POST /checkin, upload, cancel<br/>SignalR: QueueUpdated (+ polling fallback)" --> api
     staff -- "REST: call-next / complete<br/>SignalR: QueueUpdated" --> api
     display -- "SignalR: QueueUpdated" --> api
-    blazor -. "SignalR only: QueueUpdated (live push)<br/>+ NotifyMutation (after a local write)" .-> api
+    blazor -- "own QueueHub (loopback SignalR):<br/>QueueUpdated + NotifyMutation<br/>— no connection to the API" --> blazor
+    blazor -- "IQueueRepository (own SQLite file)" --> sqlite
+    blazor -- "IQueueRepository (Table impl, shared)<br/>documents (Blob, shared)" --> azurite
     api -- "IQueueRepository (SQLite impl)" --> sqlite
     api -- "IQueueRepository (Table impl)<br/>documents (Blob)" --> azurite
     api -. "AzureSignalRServerlessDemoService:<br/>ServiceHubContext push + a client<br/>connected directly to the emulator" .-> sigemu
 ```
 
-**Note on Blazor's client shape (implemented in #13):** `SignalRQueueDemo.Web` is self-encapsulated —
-check-in/call-next/complete call directly into `SignalRQueueDemo.Shared`'s `IQueueRepository`, also referenced by
-`SignalRQueueDemo.ApiService` (no REST calls to the API). Blazor and `ApiService` still run as separate Aspire
-process resources, so Blazor can't reach `QueueHub`'s broadcast the way `QueueEndpoints` does; it closes that gap
-by reusing the SignalR `HubConnection` it already holds for live updates (`QueueRealtimeService`, the .NET twin
-of the Angular shared library's `QueueHubService`) — after a local mutation, it invokes `QueueHub.NotifyMutation`,
-which **never trusts the caller's own claim about what changed**: it re-reads the actual entry/summary from the
-repository before broadcasting, so a hostile caller on the hub (CORS doesn't gate non-browser callers at all) can
-at most trigger a redundant broadcast of already-public data, never spoof state. See "Blazor is
-self-encapsulated" and the `NotifyMutation` trust-design entry in `docs/decisions.md` for the full reasoning.
-Two implementation gotchas worth knowing before touching this: `QueueRealtimeService` cannot resolve Aspire's
-`http://apiservice` logical scheme the way a plain `HttpClient` can (SignalR's WebSocket transport bypasses the
-service-discovery-aware `HttpMessageHandler` pipeline), so it reads the concrete endpoint from
-`services:apiservice:http:0` directly; and `SignalRQueueDemo.AppHost` gives `webfrontend` the identical
-Azurite/`QueueDb` wiring `apiservice` has (including an **absolute** `QueueDb` path — the plain
-`Data Source=App_Data/queue.db` each project's own `appsettings.json` carries is process-relative and would
-otherwise point the two processes at two different files).
+**Note on Blazor's client shape (originally #13; fully decoupled since #17):** `SignalRQueueDemo.Web` is
+fully self-encapsulated — it has **no runtime dependency on `SignalRQueueDemo.ApiService`**.
+Check-in/call-next/complete call directly into `SignalRQueueDemo.Shared`'s `IQueueRepository` (also referenced by
+`ApiService`, no REST calls), and Blazor hosts its **own** `QueueHub` — the same hub class, moved to
+`SignalRQueueDemo.Shared.Realtime` so both hosts share one implementation. `QueueRealtimeService` (the .NET twin
+of the Angular shared library's `QueueHubService`) opens a loopback `HubConnection` to *that* hub — the app's own
+base address (`NavigationManager.BaseUri` + `/hubs/queue`), never the API's — for live updates, and after a local
+write invokes its own hub's `NotifyMutation` to fan the change out to the app's other Blazor circuits.
+`NotifyMutation` **never trusts the caller's own claim about what changed**: it re-reads the actual entry/summary
+from the repository before broadcasting, so a hostile caller on the hub (CORS doesn't gate non-browser callers at
+all) can at most trigger a redundant broadcast of already-public data, never spoof state. See the
+"self-encapsulate Blazor completely" and `NotifyMutation` trust-design entries in `docs/decisions.md`.
+
+Two consequences worth knowing before touching this. **(1) The stacks are independent.** Because each hosts its
+own hub in its own process, a broadcast on one never reaches the other's clients — a Blazor write does not
+live-push to Angular, and vice versa. **(2) Storage is split by provider.** `SignalRQueueDemo.AppHost` points
+`webfrontend` at its **own** SQLite file (`App_Data/queue.web.db`, an absolute path distinct from `apiservice`'s
+`queue.db`), so under the default SQLite provider the two stacks are entirely separate stores (no shared data at
+all); under the Table Storage provider they deliberately share the one Azurite emulator's tables/blobs — shared
+infra, not a dependency on the API — so writes cross over via each stack's polling/catch-up but still never as a
+live push. Blazor initializes its own storage at startup (it no longer waits for the API to seed first).
 
 ## Containerizing the Angular apps
 

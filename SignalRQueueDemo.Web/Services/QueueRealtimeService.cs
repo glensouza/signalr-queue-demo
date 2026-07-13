@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
 using SignalRQueueDemo.Contracts;
 using SignalRQueueDemo.Shared.Persistence;
@@ -34,16 +35,18 @@ public enum QueueConnectionState
 /// <list type="bullet">
 /// <item>Catch-up and the polling fallback call <see cref="IQueueRepository"/> directly — the exact in-process
 /// call ApiService's own REST handlers make — instead of an HTTP GET.</item>
-/// <item>After a local write, <see cref="PublishAsync"/> tells <c>QueueHub</c> about it over this same
-/// <see cref="HubConnection"/> (<c>NotifyMutation</c>) so every other connected client (Angular, another Blazor
-/// tab) finds out too — see <c>QueueHub.NotifyMutation</c>'s remarks for the trust design behind that method.
-/// This circuit's own UI updates from the resulting broadcast arriving back over the normal
-/// <c>QueueUpdated</c> handler below, exactly like every other client; there's no local-apply special case.</item>
+/// <item>After a local write, <see cref="PublishAsync"/> tells this app's own <c>QueueHub</c> about it over this
+/// same <see cref="HubConnection"/> (<c>NotifyMutation</c>) so every other connected Blazor circuit finds out too
+/// — see <c>QueueHub.NotifyMutation</c>'s remarks for the trust design behind that method. This circuit's own UI
+/// updates from the resulting broadcast arriving back over the normal <c>QueueUpdated</c> handler below, exactly
+/// like every other circuit; there's no local-apply special case. (The hub is Blazor's own — the Angular stack
+/// has its own separate hub in ApiService, so a Blazor write never reaches Angular clients live, and vice
+/// versa; the two stacks are fully independent. See docs/decisions.md.)</item>
 /// </list>
 /// </summary>
 public sealed class QueueRealtimeService(
   IQueueRepository repository,
-  IConfiguration configuration,
+  NavigationManager navigationManager,
   ILogger<QueueRealtimeService> logger) : IAsyncDisposable
 {
   // Same backoff schedule and cutoffs as the Angular reference client, so the two stacks behave identically for
@@ -57,7 +60,7 @@ public sealed class QueueRealtimeService(
   private static readonly TimeSpan InitialConnectTimeout = TimeSpan.FromSeconds(5);
 
   private readonly IQueueRepository repository = repository;
-  private readonly IConfiguration configuration = configuration;
+  private readonly NavigationManager navigationManager = navigationManager;
   private readonly ILogger<QueueRealtimeService> logger = logger;
 
   /// <summary>
@@ -172,23 +175,16 @@ public sealed class QueueRealtimeService(
 
   private async Task ConnectHubOrFallBackToPollingAsync(CancellationToken ct)
   {
-    // SignalR's WebSocket transport opens a raw ClientWebSocket and does NOT go through the HttpMessageHandler
-    // pipeline AddServiceDiscovery() (from AddServiceDefaults) hooks into — the logical "http://apiservice"
-    // scheme only resolves for plain HTTP calls made via IHttpClientFactory, not for the socket itself. So the
-    // concrete endpoint is read directly from the service-discovery configuration Aspire injects via
-    // WithReference(apiService) in AppHost.cs — "http" is the same endpoint name AppHost.cs already uses
-    // elsewhere (apiHttpEndpoint) for the identical reason.
-    string? apiBaseUrl = this.configuration["services:apiservice:http:0"];
-    if (string.IsNullOrEmpty(apiBaseUrl))
-    {
-      this.logger.LogError(
-        "services:apiservice:http:0 is not configured; cannot connect to QueueHub. Falling back to polling.");
-      this.StartPolling();
-      return;
-    }
+    // The hub is THIS app's own (mapped at /hubs/queue in Program.cs), not ApiService's — Blazor is fully
+    // self-encapsulated and has no dependency on the API process. So the connection target is simply this app's
+    // own base address, read from NavigationManager (BaseUri already ends with '/'). This is a same-process
+    // loopback connection: the Blazor Server host connects to its own Kestrel to receive the pushes its own hub
+    // fans out. BaseUri is always populated by the time a component's OnInitializedAsync triggers StartAsync, so
+    // no "not configured" fallback is needed the way the old cross-process service-discovery lookup required.
+    string hubUrl = $"{this.navigationManager.BaseUri}hubs/queue";
 
     this.connection = new HubConnectionBuilder()
-      .WithUrl($"{apiBaseUrl}/hubs/queue")
+      .WithUrl(hubUrl)
       .WithAutomaticReconnect(ReconnectDelays)
       .Build();
 

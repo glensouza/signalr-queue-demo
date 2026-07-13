@@ -119,9 +119,13 @@ public static class QueueServiceCollectionExtensions
 
   /// <summary>
   /// Schema/table creation + seeding for whichever provider is active — the startup-time counterpart of
-  /// <see cref="AddQueueService"/>. Called once, by <c>ApiService</c> only: <c>SignalRQueueDemo.Web</c>'s
-  /// <c>WaitFor(apiService)</c> + health-check ordering in AppHost.cs already guarantees the schema/tables exist
-  /// before Blazor's first repository call, so duplicating this here would be redundant, not defensive.
+  /// <see cref="AddQueueService"/>. Called at startup by <b>both</b> hosts now that <c>SignalRQueueDemo.Web</c> is
+  /// fully self-encapsulated (its own hub, no <c>WaitFor(apiService)</c> to rely on for ordering). That's safe:
+  /// for SQLite the two hosts point at separate <c>.db</c> files (see AppHost.cs), so there's no shared state to
+  /// race; for Table Storage they share the Azurite store, but every step here is idempotent and
+  /// concurrency-safe (CreateIfNotExists tables, optimistic-insert sequence, SeedIfEmpty entries — see
+  /// <see cref="QueueSeedData"/> / <see cref="TableStorageQueueSeedData"/>), so two hosts initializing at once
+  /// converge rather than double-seed.
   /// </summary>
   public static async Task InitializeQueueStorageAsync(this IServiceProvider services, CancellationToken ct = default)
   {

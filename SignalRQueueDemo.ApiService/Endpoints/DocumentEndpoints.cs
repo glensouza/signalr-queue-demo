@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
-using SignalRQueueDemo.ApiService.Hubs;
 using SignalRQueueDemo.Contracts;
 using SignalRQueueDemo.Shared.Documents;
+using SignalRQueueDemo.Shared.Realtime;
 using SignalRQueueDemo.Shared.Persistence;
 using SignalRQueueDemo.Shared.Persistence.Blob;
 

@@ -1,7 +1,8 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 using SignalRQueueDemo.Contracts;
 
-namespace SignalRQueueDemo.ApiService.Hubs;
+namespace SignalRQueueDemo.Shared.Realtime;
 
 /// <summary>
 /// The single choke point every queue mutation pushes its <see cref="QueueUpdated"/> through. Two reasons it
@@ -20,6 +21,12 @@ namespace SignalRQueueDemo.ApiService.Hubs;
 /// into an HTTP 500 whose caller retries — double-checking-in a visitor, or skipping a waiting person on a
 /// retried call-next. ADR-0001's "a notification must never silently drop" is honored not by failing the caller
 /// but by the catch-up protocol: the committed change is replayed to any client via GET /queue/since/{seq}.
+/// </para>
+///
+/// <para>
+/// <b>Lives in Shared, hosted by both processes.</b> ApiService self-hosts this hub for the Angular apps, and
+/// SignalRQueueDemo.Web self-hosts its own instance for the Blazor circuits — two independent hubs, one
+/// implementation. Each broadcaster only ever reaches the clients connected to its own host's hub.
 /// </para>
 /// </summary>
 public sealed class QueueBroadcaster(

@@ -35,17 +35,22 @@ IResourceBuilder<ProjectResource> apiService = builder.AddProject<Projects.Signa
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health");
 
-// The SQLite provider's connection string ("Data Source=App_Data/queue.db" in each project's own
-// appsettings.json) is process-relative — `aspire run` sets each project's working directory to its own project
-// folder, so ApiService and Web would otherwise each open a DIFFERENT physical .db file and silently diverge
-// (a Blazor check-in would simply never appear on the API/Angular side). Computed once, here, as an absolute
-// path anchored to ApiService's own App_Data folder (same "relative to AppHostDirectory" pattern already used
-// for the Angular Dockerfile context below) and injected into BOTH resources so they always agree on the file,
-// regardless of Persistence:Provider — TableStorage doesn't need this (the "tables"/"blobs" references above
-// already point both resources at the same Azurite emulator, no path ambiguity there).
-string queueDbConnectionString =
+// SQLite connection strings. Under `aspire run` each project's working directory is its own project folder, so
+// the process-relative "Data Source=App_Data/queue.db" in each project's appsettings.json would resolve to a
+// different physical file per process anyway. We inject absolute paths here to make the outcome intentional and
+// explicit rather than an accident of working directories:
+//   - apiService → ApiService's own App_Data/queue.db.
+//   - webfrontend → its OWN App_Data/queue.web.db, a SEPARATE file (a few lines down). The Blazor stack is fully
+//     self-encapsulated — its own hub, no dependency on ApiService — so for the SQLite provider the two stacks
+//     are independent stores: a Blazor check-in does not appear on the Angular/API side and vice versa. This is
+//     deliberate (see docs/decisions.md). TableStorage is the intended exception: both stacks share the one
+//     Azurite emulator's tables/blobs (the "tables"/"blobs" references), which is shared infra by design.
+string apiQueueDbConnectionString =
     $"Data Source={Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "SignalRQueueDemo.ApiService", "App_Data", "queue.db"))}";
-apiService.WithEnvironment("ConnectionStrings__QueueDb", queueDbConnectionString);
+apiService.WithEnvironment("ConnectionStrings__QueueDb", apiQueueDbConnectionString);
+
+string webQueueDbConnectionString =
+    $"Data Source={Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "SignalRQueueDemo.Web", "App_Data", "queue.web.db"))}";
 
 // DECISION: UseAzureSignalR (default false) is the ADR-0001 Option C escape hatch — read here
 // independently from ApiService's own copy of the same-named flag (they're separate processes/config; there's
@@ -66,31 +71,20 @@ if (useAzureSignalR)
     apiService.WithReference(signalR).WaitFor(signalR);
 }
 
-// tables/blobs + the QueueDb connection string: webfrontend needs the exact same storage wiring as apiService —
-// see the comment above apiService's own registration for why.
-//
-// WithReference(apiService) + WaitFor(apiService) are NOT leftovers, despite Blazor being "self-encapsulated":
-// that term only means Blazor does its data reads/writes directly through SignalRQueueDemo.Shared's repositories
-// instead of REST calls — it does NOT mean Blazor is isolated from the API process. Blazor still connects to the
-// SignalR hub, which is hosted in ApiService:
-//   - WithReference(apiService) injects the service-discovery key `services__apiservice__http__0` that
-//     QueueRealtimeService reads to build the hub URL (`{apiBaseUrl}/hubs/queue`). Without it, the service can't
-//     find the hub and permanently falls back to polling — no live pushes from other clients, no NotifyMutation.
-//   - WaitFor(apiService) guarantees the API has run its startup schema-creation/seeding (see Program.cs) before
-//     Blazor's first repository call, so Web's own Program.cs doesn't repeat that step; it also means the hub is
-//     up before Blazor tries to connect.
-// (What Blazor genuinely needs nothing for is the check-in QR — CheckInQr.razor points at Blazor's own /checkin
-// page via NavigationManager.BaseUri, so no publicCheckin/API URL is injected for that. Hence no variable capture.)
+// webfrontend has NO reference to or WaitFor on apiService — that's the point of the self-encapsulation: Blazor
+// hosts its OWN SignalR hub (see SignalRQueueDemo.Web/Program.cs, mapping /hubs/queue from the shared
+// SignalRQueueDemo.Shared.Realtime.QueueHub) and initializes its OWN storage at startup, so it depends on nothing
+// the API provides at runtime. It shares only the Azurite emulator (tables/blobs, when Persistence:Provider is
+// TableStorage) — shared infra, not a dependency on the API project — and its own separate SQLite file otherwise.
+// WaitFor(tables)/WaitFor(blobs) stay so its own startup seeding doesn't race the emulator coming up.
 builder.AddProject<Projects.SignalRQueueDemo_Web>("webfrontend")
     .WithReference(tables)
     .WaitFor(tables)
     .WithReference(blobs)
     .WaitFor(blobs)
-    .WithEnvironment("ConnectionStrings__QueueDb", queueDbConnectionString)
+    .WithEnvironment("ConnectionStrings__QueueDb", webQueueDbConnectionString)
     .WithExternalHttpEndpoints()
-    .WithHttpHealthCheck("/health")
-    .WithReference(apiService)
-    .WaitFor(apiService);
+    .WithHttpHealthCheck("/health");
 
 // The Angular containers need the API's browser-facing origin -- the endpoint the visitor's/staff's browser
 // will actually call -- not the internal service-discovery name a plain WithReference(apiService) would inject

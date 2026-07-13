@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Azure.SignalR.Management;
 using SignalRQueueDemo.Contracts;
+using SignalRQueueDemo.Shared.Realtime;
 
 namespace SignalRQueueDemo.ApiService.Hubs;
 

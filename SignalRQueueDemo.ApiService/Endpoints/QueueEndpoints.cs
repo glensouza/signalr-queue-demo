@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
-using SignalRQueueDemo.ApiService.Hubs;
 using SignalRQueueDemo.Contracts;
 using SignalRQueueDemo.Shared;
+using SignalRQueueDemo.Shared.Realtime;
 using SignalRQueueDemo.Shared.Documents;
 using SignalRQueueDemo.Shared.Persistence;
 

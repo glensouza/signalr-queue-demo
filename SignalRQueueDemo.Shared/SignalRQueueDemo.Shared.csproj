@@ -6,6 +6,15 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Both hosts (ApiService and Web) now self-host the SAME QueueHub/QueueBroadcaster from this library rather
+       than each writing its own (see SignalRQueueDemo.Shared/Realtime). Compiling those SignalR hub types here
+       needs the ASP.NET Core shared framework — a FrameworkReference (not a NuGet package) is how a plain class
+       library opts into it. This is deliberate: the Blazor app is fully self-encapsulated and no longer connects
+       to ApiService's hub, so the one hub implementation must live somewhere both hosts reference. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.9" />
     <PackageReference Include="Net.Codecrete.QrCodeGenerator" Version="3.0.0" />

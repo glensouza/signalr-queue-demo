@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.SignalR;
 using SignalRQueueDemo.Contracts;
 using SignalRQueueDemo.Shared.Persistence;
 
-namespace SignalRQueueDemo.ApiService.Hubs;
+namespace SignalRQueueDemo.Shared.Realtime;
 
 /// <summary>
 /// Strongly-typed client contract for <see cref="QueueHub"/>. Using a typed <c>Hub&lt;T&gt;</c> instead of the
@@ -43,6 +43,13 @@ public interface IQueueHubClient
 /// <c>UseAzureSignalR</c> feature-flag escape hatch to the Azure SignalR emulator is documented in
 /// <c>docs/architecture.md</c>. This hub is the reference pattern behind the reconnect/catch-up protocol either
 /// way — copy its shape, not just its behavior, for any future hub.
+///
+/// <para>
+/// <b>Lives in Shared, hosted independently by both processes.</b> ApiService maps this hub for the three Angular
+/// apps; SignalRQueueDemo.Web maps its own instance of the same class for its Blazor circuits. The two are
+/// separate hubs in separate processes — a broadcast on one never reaches the other's clients — so each stack is
+/// fully self-contained. The code is shared only so the reconnect/catch-up contract is written once.
+/// </para>
 ///
 /// <para>
 /// <b>Why the hub never decides what changed:</b> <see cref="QueueUpdated"/> broadcasts always describe already-
@@ -103,11 +110,11 @@ public sealed class QueueHub(IQueueRepository repository, QueueBroadcaster broad
 
   /// <summary>
   /// The one client-callable method on this hub, and the reason it's no longer un-gated by design (see type
-  /// remarks): <c>SignalRQueueDemo.Web</c> writes to <see cref="IQueueRepository"/> directly (no REST call to
-  /// this API — see docs/decisions.md's "Blazor is self-encapsulated"), so unlike a REST-triggered mutation, a
+  /// remarks): <c>SignalRQueueDemo.Web</c> writes to <see cref="IQueueRepository"/> directly (it has no REST
+  /// client — see docs/decisions.md's "Blazor is self-encapsulated"), so unlike a REST-triggered mutation, a
   /// Blazor-originated write never reaches <see cref="QueueBroadcaster"/> on its own. Blazor's own
-  /// <c>HubConnection</c> — already open to receive pushes — calls this right after such a write so every other
-  /// connected client (Angular, another Blazor tab) still finds out.
+  /// <c>HubConnection</c> — already open to <b>its own</b> self-hosted hub to receive pushes — calls this right
+  /// after such a write so every other Blazor circuit still finds out.
   ///
   /// <para>
   /// <b>Deliberately takes only a sequence number, never a client-supplied <see cref="QueueUpdated"/>.</b> This

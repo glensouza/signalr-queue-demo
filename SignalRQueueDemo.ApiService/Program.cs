@@ -1,6 +1,7 @@
 using SignalRQueueDemo.ApiService.Endpoints;
 using SignalRQueueDemo.ApiService.Hubs;
 using SignalRQueueDemo.Shared;
+using SignalRQueueDemo.Shared.Realtime;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
