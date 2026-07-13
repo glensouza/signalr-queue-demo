@@ -82,7 +82,16 @@ public static class QueueServiceCollectionExtensions
         // "tables" matches the resource name AddTables("tables") is given in AppHost.cs — Aspire service
         // discovery injects the emulator's connection string under that name, so no connection string ever
         // appears in source or config here (court constraint: no secrets in source control).
-        builder.AddAzureTableServiceClient(connectionName: "tables");
+        //
+        // DisableHealthChecks: the Aspire client integration auto-registers an "Azure_TableServiceClient" health
+        // check that periodically lists tables on the emulator. Against Azurite that probe intermittently times out
+        // (TaskCanceledException) and logs a fail:-level "Unhealthy" error even though real reads/writes work — pure
+        // noise for an emulator-only POC, and undesirable in the court demo. The store's actual availability is
+        // already exercised by every request; a production deployment against real Azure should re-enable and tune
+        // these instead.
+        builder.AddAzureTableServiceClient(
+          connectionName: "tables",
+          configureSettings: settings => settings.DisableHealthChecks = true);
 
         // Singleton (unlike SqliteQueueRepository's Scoped registration): TableServiceClient is a thread-safe,
         // connection-pooling SDK client meant to be shared, and this repository holds no other per-request
@@ -106,8 +115,12 @@ public static class QueueServiceCollectionExtensions
     // backend this POC targets, matching its scope as a stand-in for the court's Document Management System API.
     // "blobs" matches AddBlobs("blobs") in AppHost.cs; Aspire service discovery injects the emulator's connection
     // string under that name, so (same court constraint as "tables" above) no connection string ever appears in
-    // source or config here.
-    builder.AddAzureBlobServiceClient(connectionName: "blobs");
+    // source or config here. DisableHealthChecks for the same reason as the Table client above: the
+    // auto-registered "Azure_BlobServiceClient" probe (it lists blob containers) intermittently times out against
+    // Azurite and logs a spurious fail: "Unhealthy" error while real document uploads/reads work fine.
+    builder.AddAzureBlobServiceClient(
+      connectionName: "blobs",
+      configureSettings: settings => settings.DisableHealthChecks = true);
     builder.Services.AddSingleton<DocumentBlobStore>();
 
     // Sit on top of whichever repositories were just registered above — see DocumentUploadService's,
