@@ -134,9 +134,11 @@ storage, the two stacks share the Azurite emulator (tables/blobs, when `Persiste
 get **separate** SQLite files: `SignalRQueueDemo.AppHost` injects an **absolute** `QueueDb` path pointing
 `webfrontend` at its own `App_Data/queue.web.db`, distinct from `apiservice`'s `queue.db` (the plain
 `Data Source=App_Data/queue.db` in each project's own `appsettings.json` is process-relative, so this just makes
-the separation explicit). So under the default SQLite provider the two stacks are fully independent stores — a
-Blazor check-in never appears on the Angular side, and vice versa — while under Table Storage they share one
-store (writes cross over via each stack's polling/catch-up, never live push across stacks).
+the separation explicit). Under the Table Storage provider they instead share the one Azurite account's tables,
+but each app scopes every read and write to its **own `PartitionKey`** (`Persistence:StorePartition` — `"api"` vs
+`"blazor"`), so the data is isolated per app exactly as the separate SQLite files are. So under **either** provider
+the two stacks are fully independent stores — a Blazor check-in never appears on the Angular side, and vice versa
+— sharing only the Azurite *infra* (one emulator, same tables/blob container), never the data.
 
 ### 5. `SignalRQueueDemo.AppHost` — orchestrates all of it
 
@@ -347,7 +349,7 @@ Blazor Server doesn't run as a separate dev-server process the way the Angular a
 2. **`/staff`:** sign in with the `StaffAuth:Key` value from `SignalRQueueDemo.Web/appsettings.json` (must match `SignalRQueueDemo.ApiService/appsettings.json`'s value — see [§4](#4-signalrqueuedemoweb--blazor-server-same-three-experiences)). The console shows Waiting/Serving, live-updating from the same check-in above. Call Next, Complete, and — once a document is attached — View documents (renders inline via the local token-gated streaming endpoint, not a call to `ApiService`'s REST endpoint).
 3. **`/display`:** read-only board, ticket + masked name (e.g. "Jane T."), no `servedBy`, Completed entries excluded. Confirm it updates live as `/staff` calls next/completes. It also shows a **check in from your phone** QR + URL (`CheckInQr.razor`) pointing at the **Blazor app's own `/checkin` page** (derived from `NavigationManager.BaseUri`), encoded in-process via the shared `QrCodeHelper` — the Blazor app stays self-contained and never references the API or the Angular apps.
 4. **Reconnect/catch-up:** on `/display`, DevTools → Network → **Offline**, make a couple of changes elsewhere (another check-in, a call-next), then **Online**. The board catches up within a few seconds — same acceptance criterion as the Angular apps, exercised through `QueueRealtimeService`'s direct-repository catch-up instead of an HTTP call.
-5. **Independent stacks (was "mixed-stack"):** the two stacks are now fully independent — each hosts its own `QueueHub`, and under the default SQLite provider each has its own `.db` file. So a Blazor `/checkin` does **not** appear on the Angular staff console, and vice versa; that's expected, not a bug (see the self-encapsulation decision in `docs/decisions.md`). To see them share data, set `Persistence:Provider=TableStorage` on both — they then read/write the one Azurite store, so a Blazor check-in shows up on Angular via Angular's polling/catch-up (not a live push, since the hubs are separate).
+5. **Independent stacks (was "mixed-stack"):** the two stacks are now fully independent — each hosts its own `QueueHub`, and each has its own store: a separate `.db` file under SQLite, a separate Table Storage `PartitionKey` (`api` vs `blazor`) under Table Storage. So a Blazor `/checkin` does **not** appear on the Angular staff console under either provider, and vice versa; that's expected, not a bug (see the self-encapsulation decision in `docs/decisions.md`). They share only the Azurite emulator itself (infra), never data — to deliberately make them share data you'd point both at the same `Persistence:StorePartition`.
 
 ## Angular vs. Blazor comparison
 

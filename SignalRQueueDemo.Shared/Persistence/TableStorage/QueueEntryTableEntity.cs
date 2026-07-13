@@ -6,18 +6,19 @@ namespace SignalRQueueDemo.Shared.Persistence.TableStorage;
 
 /// <summary>
 /// Table Storage-mapped mirror of <see cref="QueueEntry"/> — the Azure Table Storage counterpart of
-/// <see cref="Sqlite.QueueEntryEntity"/>. Every row lives under the same <see cref="PartitionKeyValue"/>
-/// partition: this table holds at most dozens of entries for the life of the demo (per the court's expected
-/// walk-in volume), so a single partition never approaches Table Storage's per-partition throughput limits,
-/// and keeping everything in one partition is what makes <see cref="TableStorageQueueRepository.BuildSnapshotAsync"/>
-/// a single partition-scoped query instead of a fan-out across partitions.
+/// <see cref="Sqlite.QueueEntryEntity"/>. All of one app's rows live under a single partition — its per-app
+/// PartitionKey (see <see cref="TableStorageQueueRepository"/>, which sets it from <c>Persistence:StorePartition</c>
+/// so two hosts can share these tables yet keep separate stores). This table holds at most dozens of entries per
+/// app for the life of the demo (per the court's expected walk-in volume), so a single partition per app never
+/// approaches Table Storage's per-partition throughput limits, and keeping one app's entries in one partition is
+/// what makes <see cref="TableStorageQueueRepository.BuildSnapshotAsync"/> a single partition-scoped query.
 /// </summary>
 public sealed class QueueEntryTableEntity : ITableEntity
 {
-  /// <summary>Constant partition for every entry row — see type remarks for why one partition is fine at this scale.</summary>
+  /// <summary>Default/fallback partition, used only when no <c>Persistence:StorePartition</c> is configured; the repository and seed set <see cref="PartitionKey"/> to the per-app value instead.</summary>
   public const string PartitionKeyValue = "Entry";
 
-  /// <summary>Always <see cref="PartitionKeyValue"/>; not settable to a different value by callers.</summary>
+  /// <summary>The per-app partition — defaults to <see cref="PartitionKeyValue"/> but is overwritten with the configured store partition by the repository/seed before every write.</summary>
   public string PartitionKey { get; set; } = PartitionKeyValue;
 
   /// <summary>The entry's id (mirrors <see cref="QueueEntry.Id"/>) — RowKey doubles as the natural lookup key for GetEntityAsync.</summary>

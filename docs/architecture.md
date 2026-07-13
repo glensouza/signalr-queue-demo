@@ -37,7 +37,7 @@ flowchart TB
     display -- "SignalR: QueueUpdated" --> api
     blazor -- "own QueueHub (loopback SignalR):<br/>QueueUpdated + NotifyMutation<br/>— no connection to the API" --> blazor
     blazor -- "IQueueRepository (own SQLite file)" --> sqlite
-    blazor -- "IQueueRepository (Table impl, shared)<br/>documents (Blob, shared)" --> azurite
+    blazor -- "IQueueRepository (Table impl,<br/>own PartitionKey · shared infra)<br/>documents (Blob, shared infra)" --> azurite
     api -- "IQueueRepository (SQLite impl)" --> sqlite
     api -- "IQueueRepository (Table impl)<br/>documents (Blob)" --> azurite
     api -. "AzureSignalRServerlessDemoService:<br/>ServiceHubContext push + a client<br/>connected directly to the emulator" .-> sigemu
@@ -58,12 +58,14 @@ all) can at most trigger a redundant broadcast of already-public data, never spo
 
 Two consequences worth knowing before touching this. **(1) The stacks are independent.** Because each hosts its
 own hub in its own process, a broadcast on one never reaches the other's clients — a Blazor write does not
-live-push to Angular, and vice versa. **(2) Storage is split by provider.** `SignalRQueueDemo.AppHost` points
-`webfrontend` at its **own** SQLite file (`App_Data/queue.web.db`, an absolute path distinct from `apiservice`'s
-`queue.db`), so under the default SQLite provider the two stacks are entirely separate stores (no shared data at
-all); under the Table Storage provider they deliberately share the one Azurite emulator's tables/blobs — shared
-infra, not a dependency on the API — so writes cross over via each stack's polling/catch-up but still never as a
-live push. Blazor initializes its own storage at startup (it no longer waits for the API to seed first).
+live-push to Angular, and vice versa. **(2) Each stack owns its data, under both providers.** Under SQLite,
+`SignalRQueueDemo.AppHost` points `webfrontend` at its **own** file (`App_Data/queue.web.db`, absolute, distinct
+from `apiservice`'s `queue.db`). Under Table Storage the two share the one Azurite account's tables, but each app
+scopes every read and write to its **own `PartitionKey`** (`Persistence:StorePartition` = `api` vs `blazor`, set
+in each project's `appsettings.json` and read by `TableStorageQueueRepository` / the seed), which isolates the
+data exactly as the separate SQLite files do — including an independent per-app change-event sequence. So the two
+stacks share only the Azurite *infra* (one emulator, same tables + blob container), never data, under either
+provider. Blazor initializes its own storage at startup (it no longer waits for the API to seed first).
 
 ## Containerizing the Angular apps
 

@@ -71,8 +71,20 @@ public sealed class TableStorageQueueRepository : IQueueRepository
   private readonly TableClient countersTable;
   private readonly TableClient documentsTable;
 
-  public TableStorageQueueRepository(TableServiceClient tableServiceClient)
+  /// <summary>
+  /// The PartitionKey every entry/change-event/counter row this repository writes lives under, and that every read
+  /// filters on — a per-app value (e.g. "api" vs "blazor"), so two hosts pointed at the SAME Azurite tables keep
+  /// logically separate stores without separate infra. This is the Table Storage equivalent of giving each app its
+  /// own SQLite file: the emulator (tables + blobs) is shared, but each app only ever sees its own partition, so a
+  /// check-in on one stack never shows up on the other. Documents aren't partitioned this way — they key by their
+  /// owning entry's GUID id, which is already globally unique, so they follow their entry with no cross-app overlap.
+  /// Sourced from <c>Persistence:StorePartition</c> config (see QueueServiceCollectionExtensions).
+  /// </summary>
+  private readonly string partitionKey;
+
+  public TableStorageQueueRepository(TableServiceClient tableServiceClient, string partitionKey)
   {
+    this.partitionKey = partitionKey;
     this.entriesTable = tableServiceClient.GetTableClient(EntriesTableName);
     this.changeEventsTable = tableServiceClient.GetTableClient(ChangeEventsTableName);
     this.countersTable = tableServiceClient.GetTableClient(CountersTableName);
@@ -86,6 +98,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
   public async Task<CheckInResult> CheckInAsync(CheckInRequest request, CancellationToken ct = default)
   {
     QueueEntryTableEntity entity = QueueEntryTableEntity.FromCheckIn(Guid.NewGuid().ToString(), request, DateTimeOffset.UtcNow);
+    entity.PartitionKey = this.partitionKey;
     await this.entriesTable.AddEntityAsync(entity, ct);
 
     // Position comes from the same ETag-optimistic-concurrency counter as the sequence number, not a query-time
@@ -162,7 +175,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
       try
       {
         Response<QueueEntryTableEntity> response = await this.entriesTable.GetEntityAsync<QueueEntryTableEntity>(
-          QueueEntryTableEntity.PartitionKeyValue, entryId, cancellationToken: ct);
+          this.partitionKey, entryId, cancellationToken: ct);
         entity = response.Value;
       }
       catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
@@ -205,7 +218,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
       try
       {
         Response<QueueEntryTableEntity> response = await this.entriesTable.GetEntityAsync<QueueEntryTableEntity>(
-          QueueEntryTableEntity.PartitionKeyValue, entryId, cancellationToken: ct);
+          this.partitionKey, entryId, cancellationToken: ct);
         entity = response.Value;
       }
       catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
@@ -258,7 +271,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
     try
     {
       Response<QueueEntryTableEntity> response = await this.entriesTable.GetEntityAsync<QueueEntryTableEntity>(
-        QueueEntryTableEntity.PartitionKeyValue, entryId, cancellationToken: ct);
+        this.partitionKey, entryId, cancellationToken: ct);
       entity = response.Value;
     }
     catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
@@ -299,7 +312,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
     // steps, the cutoff is enforced by breaking out of enumeration itself: a far-behind client never causes
     // more than MaxCatchUpEvents + 1 rows to be materialized, regardless of how many actually matched.
     string filter =
-      $"PartitionKey eq '{QueueChangeEventTableEntity.PartitionKeyValue}' and RowKey gt '{QueueChangeEventTableEntity.FormatRowKey(sequenceNumber)}'";
+      $"PartitionKey eq '{this.partitionKey}' and RowKey gt '{QueueChangeEventTableEntity.FormatRowKey(sequenceNumber)}'";
 
     List<QueueChangeEventTableEntity> events = [];
     await foreach (QueueChangeEventTableEntity changeEvent in this.changeEventsTable.QueryAsync<QueueChangeEventTableEntity>(filter, cancellationToken: ct))
@@ -338,7 +351,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
     try
     {
       Response<QueueCounterTableEntity> response = await this.countersTable.GetEntityAsync<QueueCounterTableEntity>(
-        QueueCounterTableEntity.PartitionKeyValue, rowKey, cancellationToken: ct);
+        this.partitionKey, rowKey, cancellationToken: ct);
       return response.Value.Value;
     }
     catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
@@ -363,7 +376,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
       try
       {
         existing = await this.countersTable.GetEntityAsync<QueueCounterTableEntity>(
-          QueueCounterTableEntity.PartitionKeyValue, rowKey, cancellationToken: ct);
+          this.partitionKey, rowKey, cancellationToken: ct);
       }
       catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
       {
@@ -372,7 +385,8 @@ public sealed class TableStorageQueueRepository : IQueueRepository
         // the retry below, which now finds the row the winner created and takes the read-then-update path.
         try
         {
-          await this.countersTable.AddEntityAsync(new QueueCounterTableEntity { RowKey = rowKey, Value = delta }, ct);
+          await this.countersTable.AddEntityAsync(
+            new QueueCounterTableEntity { PartitionKey = this.partitionKey, RowKey = rowKey, Value = delta }, ct);
           return delta;
         }
         catch (RequestFailedException addEx) when (addEx.Status == (int)HttpStatusCode.Conflict)
@@ -447,6 +461,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
     for (int attempt = 0; attempt < MaxOptimisticConcurrencyAttempts; attempt++)
     {
       QueueChangeEventTableEntity changeEvent = QueueChangeEventTableEntity.FromEntry(entity, next);
+      changeEvent.PartitionKey = this.partitionKey;
       try
       {
         await this.changeEventsTable.AddEntityAsync(changeEvent, ct);
@@ -482,7 +497,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
     try
     {
       Response<QueueCounterTableEntity> existing = await this.countersTable.GetEntityAsync<QueueCounterTableEntity>(
-        QueueCounterTableEntity.PartitionKeyValue, QueueCounterTableEntity.SequenceRowKey, cancellationToken: ct);
+        this.partitionKey, QueueCounterTableEntity.SequenceRowKey, cancellationToken: ct);
       if (existing.Value.Value >= value)
       {
         return;
@@ -497,7 +512,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
       try
       {
         await this.countersTable.AddEntityAsync(
-          new QueueCounterTableEntity { RowKey = QueueCounterTableEntity.SequenceRowKey, Value = value }, ct);
+          new QueueCounterTableEntity { PartitionKey = this.partitionKey, RowKey = QueueCounterTableEntity.SequenceRowKey, Value = value }, ct);
       }
       catch (RequestFailedException addEx) when (addEx.Status == (int)HttpStatusCode.Conflict)
       {
@@ -513,7 +528,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
   /// <summary>Scans the Waiting rows client-side for the oldest one — Table Storage has no server-side ORDER BY (same constraint noted on <see cref="Sqlite.QueueDbContext"/>'s DateTimeOffset conversion, but here it applies to every read, not just this one).</summary>
   private async Task<QueueEntryTableEntity?> FindOldestWaitingAsync(CancellationToken ct)
   {
-    string filter = $"PartitionKey eq '{QueueEntryTableEntity.PartitionKeyValue}' and Status eq '{nameof(QueueStatus.Waiting)}'";
+    string filter = $"PartitionKey eq '{this.partitionKey}' and Status eq '{nameof(QueueStatus.Waiting)}'";
 
     QueueEntryTableEntity? oldest = null;
     await foreach (QueueEntryTableEntity entity in this.entriesTable.QueryAsync<QueueEntryTableEntity>(filter, cancellationToken: ct))
@@ -529,7 +544,7 @@ public sealed class TableStorageQueueRepository : IQueueRepository
 
   private async Task<QueueSnapshot> BuildSnapshotAsync(CancellationToken ct)
   {
-    string filter = $"PartitionKey eq '{QueueEntryTableEntity.PartitionKeyValue}'";
+    string filter = $"PartitionKey eq '{this.partitionKey}'";
 
     List<QueueEntryTableEntity> entities = [];
     await foreach (QueueEntryTableEntity entity in this.entriesTable.QueryAsync<QueueEntryTableEntity>(filter, cancellationToken: ct))

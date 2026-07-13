@@ -87,8 +87,12 @@ public static class QueueServiceCollectionExtensions
         // Singleton (unlike SqliteQueueRepository's Scoped registration): TableServiceClient is a thread-safe,
         // connection-pooling SDK client meant to be shared, and this repository holds no other per-request
         // state, so there's no reason to pay DI's per-scope allocation cost SqliteQueueRepository pays for its
-        // scoped DbContext.
-        builder.Services.AddSingleton<IQueueRepository, TableStorageQueueRepository>();
+        // scoped DbContext. The per-app StorePartition is passed in so two hosts sharing one Azurite account keep
+        // logically separate stores (the Table Storage equivalent of each app owning its own SQLite file) — see
+        // TableStorageQueueRepository.partitionKey and ResolveStorePartition below.
+        string storePartition = ResolveStorePartition(builder.Configuration);
+        builder.Services.AddSingleton<IQueueRepository>(sp =>
+            new TableStorageQueueRepository(sp.GetRequiredService<TableServiceClient>(), storePartition));
         builder.Services.AddSingleton<IDocumentRepository, TableStorageDocumentRepository>();
         break;
 
@@ -137,7 +141,8 @@ public static class QueueServiceCollectionExtensions
       // three named tables (entries, change events, sequence counter) still need to exist before the first
       // request. See TableStorageQueueSeedData for why seeding also primes the sequence counter.
       TableServiceClient tableServiceClient = services.GetRequiredService<TableServiceClient>();
-      await TableStorageQueueSeedData.EnsureTablesAndSeedAsync(tableServiceClient, ct);
+      await TableStorageQueueSeedData.EnsureTablesAndSeedAsync(
+        tableServiceClient, ResolveStorePartition(services.GetRequiredService<IConfiguration>()), ct);
 
       // Documents table has no seed data (no synthetic pre-uploaded documents) — it just needs to exist before
       // the first upload, same "Azurite starts with zero tables" reasoning as the three tables
@@ -156,4 +161,15 @@ public static class QueueServiceCollectionExtensions
       await QueueSeedData.SeedIfEmptyAsync(dbContext, ct);
     }
   }
+
+  /// <summary>
+  /// The per-app Table Storage PartitionKey, read once from <c>Persistence:StorePartition</c> and used by both the
+  /// repository (for every read/write) and the startup seed. It's how two hosts pointed at the same shared Azurite
+  /// tables keep logically separate stores — the Table Storage counterpart of each app owning its own SQLite file
+  /// (see AppHost.cs). Each host sets its own value in appsettings.json ("api" vs "blazor"); the <c>"default"</c>
+  /// fallback keeps a standalone/unset run working (it just means "one shared partition", the pre-#17 behavior).
+  /// The Sqlite provider ignores this entirely — its separation is by file, wired in AppHost.cs.
+  /// </summary>
+  private static string ResolveStorePartition(IConfiguration configuration) =>
+    configuration["Persistence:StorePartition"] is { Length: > 0 } partition ? partition : "default";
 }

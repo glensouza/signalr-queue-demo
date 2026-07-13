@@ -39,7 +39,7 @@ public sealed class QueueCounterTableEntity : ITableEntity
   /// <summary>Row key for the running count of currently Waiting entries.</summary>
   public const string WaitingCountRowKey = "WaitingCount";
 
-  /// <summary>Always <see cref="PartitionKeyValue"/>.</summary>
+  /// <summary>The per-app partition — defaults to <see cref="PartitionKeyValue"/> but is overwritten with the configured store partition by the repository/seed (so each app has its own Sequence/WaitingCount counter rows).</summary>
   public string PartitionKey { get; set; } = PartitionKeyValue;
 
   /// <summary><see cref="SequenceRowKey"/> or <see cref="WaitingCountRowKey"/> — selects which counter this row is.</summary>

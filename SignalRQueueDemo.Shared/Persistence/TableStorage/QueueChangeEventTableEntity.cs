@@ -26,7 +26,7 @@ public sealed class QueueChangeEventTableEntity : ITableEntity
   /// <summary>Digit width for <see cref="RowKey"/>'s zero-padding — <c>long.MaxValue</c> is 19 digits.</summary>
   private const string RowKeyFormat = "D19";
 
-  /// <summary>Always <see cref="PartitionKeyValue"/>; not settable to a different value by callers.</summary>
+  /// <summary>The per-app partition — defaults to <see cref="PartitionKeyValue"/> but is overwritten with the configured store partition by the repository/seed before every write (so each app's change-event log is independent, with its own sequence numbering).</summary>
   public string PartitionKey { get; set; } = PartitionKeyValue;
 
   /// <summary>Zero-padded <see cref="SequenceNumber"/> — see type remarks for why padding (not the bare number) is required.</summary>
