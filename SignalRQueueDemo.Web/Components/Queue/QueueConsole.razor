@@ -4,43 +4,80 @@
 @inject QueueRealtimeService Realtime
 
 <div class="queue-console">
-    <section class="waiting-column">
-        <h2>Waiting (@this.WaitingEntries.Count)</h2>
-        <button type="button" disabled="@(this.WaitingEntries.Count == 0 || this.callingNext)" @onclick="this.HandleCallNextAsync">
-            Call Next
-        </button>
-        <ul>
-            @foreach (QueueEntry entry in this.WaitingEntries)
-            {
-                <li>
-                    @entry.TicketNumber — @entry.DisplayName
-                    @if (entry.DocumentCount > 0)
-                    {
-                        <button type="button" @onclick="() => this.selectedEntryId = entry.Id">View documents (@entry.DocumentCount)</button>
-                    }
-                </li>
-            }
-        </ul>
-    </section>
+    @if (Realtime.ConnectionState == QueueConnectionState.Polling)
+    {
+        <p class="reconnecting" role="status">Reconnecting… queue state is still saved.</p>
+    }
 
-    <section class="serving-column">
-        <h2>Serving (@this.ServingEntries.Count)</h2>
-        <ul>
-            @foreach (QueueEntry entry in this.ServingEntries)
+    <div class="console-grid">
+        <div class="queue-section">
+            <h2>Serving</h2>
+            @if (this.ServingEntries.Count == 0)
             {
-                <li>
-                    @entry.TicketNumber — @entry.DisplayName (served by @entry.ServedBy)
-                    <button type="button" disabled="@this.completing.Contains(entry.Id)" @onclick="() => this.HandleCompleteAsync(entry.Id)">
-                        Complete
-                    </button>
-                    @if (entry.DocumentCount > 0)
-                    {
-                        <button type="button" @onclick="() => this.selectedEntryId = entry.Id">View documents (@entry.DocumentCount)</button>
-                    }
-                </li>
+                <p class="empty-state">No one being served</p>
             }
-        </ul>
-    </section>
+            else
+            {
+                <ul class="entry-list">
+                    @foreach (QueueEntry entry in this.ServingEntries)
+                    {
+                        <li class="entry-row entry-serving">
+                            <div class="entry-header">
+                                <span class="ticket">@entry.TicketNumber</span>
+                                <span class="name">@entry.DisplayName</span>
+                                <span class="served-by">(@entry.ServedBy)</span>
+                            </div>
+                            <div class="entry-actions">
+                                @if (entry.DocumentCount > 0)
+                                {
+                                    <button class="secondary-button" type="button" @onclick="() => this.selectedEntryId = entry.Id">View documents (@entry.DocumentCount)</button>
+                                }
+                                <button class="primary-button" type="button" disabled="@this.completing.Contains(entry.Id)" @onclick="() => this.HandleCompleteAsync(entry.Id)">Complete</button>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="queue-section">
+            <h2>Waiting</h2>
+            <div class="waiting-summary">
+                @this.WaitingEntries.Count @(this.WaitingEntries.Count == 1 ? "person" : "people") waiting
+            </div>
+            
+            <button class="primary-button large call-next-button" type="button" disabled="@(this.WaitingEntries.Count == 0 || this.callingNext)" @onclick="this.HandleCallNextAsync">
+                @(this.callingNext ? "Calling…" : "Call Next")
+            </button>
+            
+            @if (this.WaitingEntries.Count == 0)
+            {
+                <p class="empty-state">No one waiting</p>
+            }
+            else
+            {
+                <ul class="entry-list">
+                    @for (int i = 0; i < this.WaitingEntries.Count; i++)
+                    {
+                        QueueEntry entry = this.WaitingEntries[i];
+                        <li class="entry-row entry-waiting">
+                            <div class="entry-header">
+                                <span class="position">#@(i + 1)</span>
+                                <span class="ticket">@entry.TicketNumber</span>
+                                <span class="name">@entry.DisplayName</span>
+                            </div>
+                            @if (entry.DocumentCount > 0)
+                            {
+                                <div class="entry-actions">
+                                    <button class="secondary-button" type="button" @onclick="() => this.selectedEntryId = entry.Id">View documents (@entry.DocumentCount)</button>
+                                </div>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
 
     @if (this.selectedEntryId is { } entryId)
     {

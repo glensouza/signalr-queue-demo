@@ -2,23 +2,47 @@
 @inject QueueRealtimeService Realtime
 @inject QueueCancellationService CancellationService
 
-<div class="position-view">
+<section class="position-view">
+    @if (Realtime.ConnectionState == QueueConnectionState.Polling)
+    {
+        <p class="reconnecting" role="status">Reconnecting… your place is still saved.</p>
+    }
+
     @switch (CurrentStatus)
     {
         case QueueStatus.Serving:
-            <p class="status-serving">It's your turn — ticket @CurrentEntry?.TicketNumber, please see staff now.</p>
+            <div class="state state-serving">
+                <p class="eyebrow">It's your turn</p>
+                <h1 class="headline">@CurrentEntry?.DisplayName, please come to the counter</h1>
+                <p class="detail">Ticket @CurrentEntry?.TicketNumber</p>
+            </div>
             break;
         case QueueStatus.Completed:
-            <p class="status-completed">Thank you, @CurrentEntry?.DisplayName. Resetting in @secondsRemaining…</p>
+            <div class="state state-complete">
+                <p class="eyebrow">All done</p>
+                <h1 class="headline">Thank you, @CurrentEntry?.DisplayName</h1>
+                <p class="detail">Removing from your list in @(secondsRemaining)s…</p>
+            </div>
             break;
         default:
-            <p class="status-waiting">You are #@CurrentPosition in line (ticket @(CurrentEntry?.TicketNumber ?? SeedEntry.TicketNumber)).</p>
-            <DocumentUpload EntryId="EntryId" />
+            <div class="state state-waiting">
+                <p class="eyebrow">Checked in</p>
+                <p class="position-number">#@CurrentPosition</p>
+                <h1 class="headline">@(CurrentPosition == 1 ? "You're next" : "in line")</h1>
+                <p class="detail">@(CurrentEntry?.DisplayName ?? SeedEntry.DisplayName) · Ticket @(CurrentEntry?.TicketNumber ?? SeedEntry.TicketNumber)</p>
+            </div>
             break;
     }
 
-    <button type="button" @onclick="this.StopTrackingAsync">Stop tracking</button>
-</div>
+    @if (CurrentStatus != QueueStatus.Completed)
+    {
+        <DocumentUpload EntryId="@EntryId" />
+    }
+
+    <button type="button" class="secondary-button" @onclick="this.StopTrackingAsync">
+        @(CurrentStatus == QueueStatus.Completed ? "Clear" : "Stop tracking")
+    </button>
+</section>
 
 @code {
     /// <summary>Auto-reset countdown after Completed — same duration as the Angular reference client's PositionView.</summary>

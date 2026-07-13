@@ -2,31 +2,40 @@
 @inject DocumentAccessTokenService TokenService
 
 <div class="document-viewer">
-    <h3>Documents</h3>
-    <button type="button" @onclick="() => this.OnClose.InvokeAsync()">Close</button>
+    <div class="documents-panel">
+        <h3>Documents</h3>
 
-    @if (this.documents is null)
-    {
-        <p>Loading…</p>
-    }
-    else if (this.documents.Count == 0)
-    {
-        <p>No documents.</p>
-    }
-    else
-    {
-        <ul>
-            @foreach (DocumentMetadata document in this.documents)
-            {
-                <li>
-                    <button type="button" @onclick="() => this.selectedDocumentId = document.Id">@document.FileName</button>
-                </li>
-            }
-        </ul>
-
-        @if (this.SelectedDocument is { } selected)
+        @if (this.documents is null)
         {
-            string url = this.BuildDocumentUrl(selected);
+            <p class="status">Loading documents…</p>
+        }
+        else if (this.documents.Count == 0)
+        {
+            <p class="status">No documents attached</p>
+        }
+        else
+        {
+            <ul class="document-list">
+                @foreach (DocumentMetadata document in this.documents)
+                {
+                    <li>
+                        <button class="document-item @(this.selectedDocumentId == document.Id ? "selected" : "")" type="button" @onclick="() => this.selectedDocumentId = document.Id">
+                            <span class="doc-name">@document.FileName</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+        }
+
+        <button type="button" class="secondary-button close-button" style="margin-top: 1rem; width: 100%;" @onclick="() => this.OnClose.InvokeAsync()">Close</button>
+    </div>
+
+    @if (this.SelectedDocument is { } selected)
+    {
+        <div class="viewer-panel">
+            @{
+                string url = this.BuildDocumentUrl(selected);
+            }
 
             @if (string.Equals(selected.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
             {
@@ -36,7 +45,7 @@
             {
                 <img class="document-image" src="@url" alt="@selected.FileName" />
             }
-        }
+        </div>
     }
 </div>
 

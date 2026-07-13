@@ -2,21 +2,26 @@
 @inject QueueRealtimeService Realtime
 
 <section class="waiting-list">
-    <h2>Waiting (@this.WaitingEntries.Count)</h2>
+    <h2 class="section-title">Waiting (@this.WaitingEntries.Count)</h2>
 
-    @if (this.WaitingEntries.Count == 0)
-    {
-        <p>No one is currently waiting.</p>
-    }
-    else
-    {
-        <ol>
-            @foreach (QueueEntry entry in this.WaitingEntries)
+    <div class="entries">
+        @if (this.WaitingEntries.Count == 0)
+        {
+            <p class="empty-state">No one is currently waiting.</p>
+        }
+        else
+        {
+            @for (int i = 0; i < this.WaitingEntries.Count; i++)
             {
-                <li>@entry.TicketNumber — @PublicName.ToPublicName(entry.DisplayName)</li>
+                QueueEntry entry = this.WaitingEntries[i];
+                <div class="entry">
+                    <div class="position">#@(i + 1)</div>
+                    <div class="ticket-number">@entry.TicketNumber</div>
+                    <div class="entry-name">@PublicName.ToPublicName(entry.DisplayName)</div>
+                </div>
             }
-        </ol>
-    }
+        }
+    </div>
 </section>
 
 @code {

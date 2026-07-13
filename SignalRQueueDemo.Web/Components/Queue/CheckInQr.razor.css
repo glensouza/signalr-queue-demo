@@ -1,0 +1,53 @@
+.check-in-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding: 1.5rem 2rem;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-glass);
+  position: absolute;
+  bottom: 2rem;
+  left: 2rem;
+  z-index: 10;
+}
+
+.cta-label {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cta-url {
+  margin: 0;
+  font-family: 'Inter', monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  word-break: break-all;
+}
+
+.cta-qr {
+  width: 140px;
+  height: 140px;
+  background: white;
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+::deep .cta-qr svg {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}

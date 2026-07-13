@@ -1,0 +1,116 @@
+.now-serving {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.section-title {
+  margin: 0 0 2rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.section-title::before {
+  content: '';
+  display: block;
+  width: 8px;
+  height: 24px;
+  background: var(--accent-success);
+  border-radius: 4px;
+  box-shadow: 0 0 12px var(--accent-success);
+}
+
+.entries {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 1rem;
+}
+
+.empty-state {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 4rem 0;
+}
+
+.entry {
+  animation: slideIn 0.4s ease-out;
+}
+
+.ticket-card {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.02));
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: var(--radius-md);
+  padding: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  min-height: 8rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 40px rgba(16, 185, 129, 0.05);
+  transition: var(--transition);
+}
+
+.ticket-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: var(--accent-success);
+  box-shadow: 0 0 20px var(--accent-success);
+}
+
+.ticket-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2), inset 0 0 40px rgba(16, 185, 129, 0.1);
+}
+
+.ticket-number {
+  font-size: 4rem;
+  font-weight: 800;
+  color: var(--accent-success);
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
+  line-height: 1;
+}
+
+.entry-name {
+  font-size: 1.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Custom scrollbar for entries */
+.entries::-webkit-scrollbar {
+  width: 6px;
+}
+.entries::-webkit-scrollbar-track {
+  background: transparent;
+}
+.entries::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+.entries::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
