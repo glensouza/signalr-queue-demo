@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
-using SignalRQueueDemo.ApiService.Persistence;
 using SignalRQueueDemo.Contracts;
+using SignalRQueueDemo.Shared.Persistence;
 
 namespace SignalRQueueDemo.ApiService.Hubs;
 
@@ -45,18 +45,21 @@ public interface IQueueHubClient
 /// way — copy its shape, not just its behavior, for any future hub.
 ///
 /// <para>
-/// <b>Why the hub never decides what changed:</b> <see cref="QueueUpdated"/> broadcasts originate at the REST
-/// endpoints (see <c>QueueEndpoints</c>), not here. The hub exposes no method a client calls to mutate the
-/// queue — every write goes through the REST API, which already builds the exact <see cref="QueueUpdated"/>
-/// payload and simply hands it to <see cref="Hub{T}.Clients"/>. Duplicating that payload-building logic in
-/// the hub would risk it drifting from what the REST caller received.
+/// <b>Why the hub never decides what changed:</b> <see cref="QueueUpdated"/> broadcasts always describe already-
+/// committed repository state, never a client's own claim about what changed. Most originate at the REST
+/// endpoints (see <c>QueueEndpoints</c>), which already build the exact payload and simply hand it to
+/// <see cref="Hub{T}.Clients"/>. The one exception, <see cref="NotifyMutation"/>, still holds the line: it takes
+/// only a sequence number from the caller and re-reads the actual entry/summary from
+/// <see cref="IQueueRepository"/> before broadcasting — see its remarks for why.
 /// </para>
 ///
 /// <para>
 /// <b>Why catch-up isn't a hub method:</b> "what did I miss" is answered over REST
 /// (<c>GET /queue/since/{sequenceNumber}</c>), never by asking the hub. A dropped SignalR connection is
 /// exactly the scenario where the hub can't be trusted to answer — REST-over-HTTP has its own independent
-/// retry/timeout semantics and doesn't depend on the socket that just failed.
+/// retry/timeout semantics and doesn't depend on the socket that just failed. (Blazor, which has no REST client
+/// at all, answers the same question by calling <see cref="IQueueRepository.GetChangesSinceAsync"/> directly —
+/// still not through the hub.)
 /// </para>
 ///
 /// <para>
@@ -71,11 +74,12 @@ public interface IQueueHubClient
 /// must treat the sequence number — not arrival order — as authoritative.
 /// </para>
 /// </summary>
-public sealed class QueueHub(IQueueRepository repository) : Hub<IQueueHubClient>
+public sealed class QueueHub(IQueueRepository repository, QueueBroadcaster broadcaster) : Hub<IQueueHubClient>
 {
-  // Explicit field (not a bare captured primary-constructor parameter) so call sites can use the
-  // this.repository prefix required by CLAUDE.md's C# style for instance members.
+  // Explicit fields (not bare captured primary-constructor parameters) so call sites can use the this.
+  // prefix required by CLAUDE.md's C# style for instance members.
   private readonly IQueueRepository repository = repository;
+  private readonly QueueBroadcaster broadcaster = broadcaster;
 
   /// <summary>
   /// SignalR calls this for every new connection — first-time and reconnect look identical at this layer, so
@@ -95,5 +99,55 @@ public sealed class QueueHub(IQueueRepository repository) : Hub<IQueueHubClient>
     long latestSequence = await this.repository.GetLatestSequenceAsync();
     await this.Clients.Caller.CurrentSequence(latestSequence);
     await base.OnConnectedAsync();
+  }
+
+  /// <summary>
+  /// The one client-callable method on this hub, and the reason it's no longer un-gated by design (see type
+  /// remarks): <c>SignalRQueueDemo.Web</c> writes to <see cref="IQueueRepository"/> directly (no REST call to
+  /// this API — see docs/decisions.md's "Blazor is self-encapsulated"), so unlike a REST-triggered mutation, a
+  /// Blazor-originated write never reaches <see cref="QueueBroadcaster"/> on its own. Blazor's own
+  /// <c>HubConnection</c> — already open to receive pushes — calls this right after such a write so every other
+  /// connected client (Angular, another Blazor tab) still finds out.
+  ///
+  /// <para>
+  /// <b>Deliberately takes only a sequence number, never a client-supplied <see cref="QueueUpdated"/>.</b> This
+  /// hub is reachable by any SignalR client that can open a connection to it — CORS (see <c>Program.cs</c>)
+  /// stops a browser from doing so cross-origin, but it does nothing to stop a non-browser caller (curl, a
+  /// hand-rolled client), since CORS is a browser-enforced concept. Accepting and re-broadcasting a caller-built
+  /// payload would let anyone spoof "Now Serving" on every connected display or staff console. Instead this
+  /// re-reads the actual change from the repository — the same trusted source every REST-triggered broadcast
+  /// already uses — so the worst a hostile caller can do is trigger a redundant broadcast of data that's already
+  /// public via the unauthenticated <c>GET /queue/since/{seq}</c> endpoint. No new exposure, and the "hub never
+  /// decides what changed" invariant holds: it still only ever repeats what the repository says happened.
+  /// </para>
+  /// </summary>
+  public async Task NotifyMutation(long sequenceNumber)
+  {
+    QueueChangesSinceResponse changes = await this.repository.GetChangesSinceAsync(sequenceNumber - 1);
+
+    // Only trust an exact, single-event match for the requested sequence number. IsSnapshot means the requested
+    // number was too far behind (or unrecognized) to diff — nothing here to safely attribute to this specific
+    // mutation, so there's nothing to do: the caller already has its own correct state from the write it just
+    // made, and every other client will pick this up on its own next mutation-triggered broadcast or reconnect
+    // catch-up. Silently returning (not throwing) matches QueueBroadcaster's "never fail the caller" philosophy.
+    QueueChangeEvent? change = !changes.IsSnapshot
+      ? changes.Changes?.FirstOrDefault(c => c.SequenceNumber == sequenceNumber)
+      : null;
+    if (change is null)
+    {
+      return;
+    }
+
+    // The summary must be re-read too, not reused from `changes` (which carries none) — a snapshot as of right
+    // now, not as of `sequenceNumber`, matching how every REST-triggered QueueUpdated already pairs a specific
+    // change with the current whole-queue state at broadcast time.
+    QueueStateResponse state = await this.repository.GetStateAsync();
+
+    await this.broadcaster.BroadcastAsync(new QueueUpdated
+    {
+      SequenceNumber = sequenceNumber,
+      ChangedEntry = change.Entry,
+      Summary = state.Snapshot
+    });
   }
 }

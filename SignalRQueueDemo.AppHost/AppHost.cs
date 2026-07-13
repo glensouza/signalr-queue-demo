@@ -1,4 +1,3 @@
-using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Azure;
 using Microsoft.Extensions.Configuration;
 
@@ -23,6 +22,11 @@ IResourceBuilder<AzureStorageResource> storage = builder.AddAzureStorage("storag
 IResourceBuilder<AzureTableStorageResource> tables = storage.AddTables("tables");
 IResourceBuilder<AzureBlobStorageResource> blobs = storage.AddBlobs("blobs");
 
+// Both resources below now write to the queue store directly — ApiService via its REST endpoints, webfrontend
+// (Blazor) via SignalRQueueDemo.Shared's repositories called in-process (see docs/decisions.md's "Blazor is
+// self-encapsulated"). So both need identical storage wiring: the same tables/blobs references below, and (a few
+// lines down) the same absolute QueueDb connection string, so a Blazor-originated check-in and an
+// ApiService-originated one land in the exact same store instead of two silently divergent ones.
 IResourceBuilder<ProjectResource> apiService = builder.AddProject<Projects.SignalRQueueDemo_ApiService>("apiservice")
     .WithReference(tables)
     .WaitFor(tables)
@@ -30,6 +34,18 @@ IResourceBuilder<ProjectResource> apiService = builder.AddProject<Projects.Signa
     .WaitFor(blobs)
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health");
+
+// The SQLite provider's connection string ("Data Source=App_Data/queue.db" in each project's own
+// appsettings.json) is process-relative — `aspire run` sets each project's working directory to its own project
+// folder, so ApiService and Web would otherwise each open a DIFFERENT physical .db file and silently diverge
+// (a Blazor check-in would simply never appear on the API/Angular side). Computed once, here, as an absolute
+// path anchored to ApiService's own App_Data folder (same "relative to AppHostDirectory" pattern already used
+// for the Angular Dockerfile context below) and injected into BOTH resources so they always agree on the file,
+// regardless of Persistence:Provider — TableStorage doesn't need this (the "tables"/"blobs" references above
+// already point both resources at the same Azurite emulator, no path ambiguity there).
+string queueDbConnectionString =
+    $"Data Source={Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "SignalRQueueDemo.ApiService", "App_Data", "queue.db"))}";
+apiService.WithEnvironment("ConnectionStrings__QueueDb", queueDbConnectionString);
 
 // DECISION: UseAzureSignalR (default false) is the ADR-0001 Option C escape hatch — read here
 // independently from ApiService's own copy of the same-named flag (they're separate processes/config; there's
@@ -50,7 +66,16 @@ if (useAzureSignalR)
     apiService.WithReference(signalR).WaitFor(signalR);
 }
 
+// tables/blobs + the QueueDb connection string: webfrontend needs the exact same storage wiring as apiService —
+// see the comment above apiService's own registration for why. WaitFor(apiService) additionally guarantees the
+// API has already run its startup schema-creation/seeding (see Program.cs) before Blazor's first repository
+// call, so Web's own Program.cs doesn't need to repeat that step.
 builder.AddProject<Projects.SignalRQueueDemo_Web>("webfrontend")
+    .WithReference(tables)
+    .WaitFor(tables)
+    .WithReference(blobs)
+    .WaitFor(blobs)
+    .WithEnvironment("ConnectionStrings__QueueDb", queueDbConnectionString)
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health")
     .WithReference(apiService)

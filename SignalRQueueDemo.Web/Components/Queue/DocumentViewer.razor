@@ -1,0 +1,80 @@
+@inject IDocumentRepository DocumentRepository
+@inject DocumentAccessTokenService TokenService
+
+<div class="document-viewer">
+    <h3>Documents</h3>
+    <button type="button" @onclick="() => this.OnClose.InvokeAsync()">Close</button>
+
+    @if (this.documents is null)
+    {
+        <p>Loading…</p>
+    }
+    else if (this.documents.Count == 0)
+    {
+        <p>No documents.</p>
+    }
+    else
+    {
+        <ul>
+            @foreach (DocumentMetadata document in this.documents)
+            {
+                <li>
+                    <button type="button" @onclick="() => this.selectedDocumentId = document.Id">@document.FileName</button>
+                </li>
+            }
+        </ul>
+
+        @if (this.SelectedDocument is { } selected)
+        {
+            string url = this.BuildDocumentUrl(selected);
+
+            @if (string.Equals(selected.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                <iframe class="document-frame" src="@url" title="@selected.FileName"></iframe>
+            }
+            else
+            {
+                <img class="document-image" src="@url" alt="@selected.FileName" />
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string EntryId { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private IReadOnlyList<DocumentMetadata>? documents;
+    private string? selectedDocumentId;
+    private string? loadedEntryId;
+
+    private DocumentMetadata? SelectedDocument => this.documents?.FirstOrDefault(d => d.Id == this.selectedDocumentId);
+
+    // Guarded on EntryId actually changing, not just "the parent re-rendered": QueueConsole re-renders this
+    // component on every QueueUpdated (a check-in, a call-next elsewhere — anything), which happens often while
+    // a staff member is reading a document. Resetting selectedDocumentId/refetching unconditionally on every
+    // OnParametersSetAsync call closed whatever they had open on each unrelated queue event.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (this.loadedEntryId == this.EntryId)
+        {
+            return;
+        }
+
+        this.loadedEntryId = this.EntryId;
+        this.selectedDocumentId = null;
+        this.documents = await DocumentRepository.GetDocumentsAsync(this.EntryId);
+    }
+
+    // Mints a fresh, resource-scoped token on every render — see DocumentAccessTokenService's remarks for why a
+    // plain <iframe>/<img> src needs a token in the URL instead of the X-Staff-Key header the REST document
+    // endpoints use, and why that's safe here (only reachable from already-signed-in staff markup).
+    private string BuildDocumentUrl(DocumentMetadata document)
+    {
+        string token = TokenService.Issue(this.EntryId, document.Id);
+        return $"/staff/documents/{this.EntryId}/{document.Id}?token={Uri.EscapeDataString(token)}";
+    }
+}

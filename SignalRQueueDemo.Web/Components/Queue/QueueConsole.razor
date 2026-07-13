@@ -1,0 +1,110 @@
+@implements IDisposable
+@inject IQueueRepository QueueRepository
+@inject QueueCompletionService CompletionService
+@inject QueueRealtimeService Realtime
+
+<div class="queue-console">
+    <section class="waiting-column">
+        <h2>Waiting (@this.WaitingEntries.Count)</h2>
+        <button type="button" disabled="@(this.WaitingEntries.Count == 0 || this.callingNext)" @onclick="this.HandleCallNextAsync">
+            Call Next
+        </button>
+        <ul>
+            @foreach (QueueEntry entry in this.WaitingEntries)
+            {
+                <li>
+                    @entry.TicketNumber — @entry.DisplayName
+                    @if (entry.DocumentCount > 0)
+                    {
+                        <button type="button" @onclick="() => this.selectedEntryId = entry.Id">View documents (@entry.DocumentCount)</button>
+                    }
+                </li>
+            }
+        </ul>
+    </section>
+
+    <section class="serving-column">
+        <h2>Serving (@this.ServingEntries.Count)</h2>
+        <ul>
+            @foreach (QueueEntry entry in this.ServingEntries)
+            {
+                <li>
+                    @entry.TicketNumber — @entry.DisplayName (served by @entry.ServedBy)
+                    <button type="button" disabled="@this.completing.Contains(entry.Id)" @onclick="() => this.HandleCompleteAsync(entry.Id)">
+                        Complete
+                    </button>
+                    @if (entry.DocumentCount > 0)
+                    {
+                        <button type="button" @onclick="() => this.selectedEntryId = entry.Id">View documents (@entry.DocumentCount)</button>
+                    }
+                </li>
+            }
+        </ul>
+    </section>
+
+    @if (this.selectedEntryId is { } entryId)
+    {
+        <DocumentViewer EntryId="entryId" OnClose="() => this.selectedEntryId = null" />
+    }
+</div>
+
+@code {
+    private bool callingNext;
+    private readonly HashSet<string> completing = [];
+    private string? selectedEntryId;
+
+    private List<QueueEntry> WaitingEntries => [.. (Realtime.Snapshot?.Queue ?? [])
+        .Where(e => e.Status == QueueStatus.Waiting)
+        .OrderBy(e => e.CheckedInAt)];
+
+    private List<QueueEntry> ServingEntries => [.. (Realtime.Snapshot?.Queue ?? [])
+        .Where(e => e.Status == QueueStatus.Serving)
+        .OrderBy(e => e.CheckedInAt)];
+
+    protected override void OnInitialized() => Realtime.Changed += this.OnRealtimeChanged;
+
+    private void OnRealtimeChanged() => this.InvokeAsync(this.StateHasChanged);
+
+    private async Task HandleCallNextAsync()
+    {
+        this.callingNext = true;
+        try
+        {
+            QueueOperationResult result = await QueueRepository.CallNextAsync();
+            if (result.Outcome == QueueOperationOutcome.Success)
+            {
+                await Realtime.PublishAsync(result.Update!);
+            }
+        }
+        finally
+        {
+            this.callingNext = false;
+        }
+    }
+
+    private async Task HandleCompleteAsync(string entryId)
+    {
+        this.completing.Add(entryId);
+        try
+        {
+            // QueueCompletionService (not QueueRepository.CompleteAsync directly) so completing an entry here
+            // also deletes its documents, exactly like the REST /queue/{id}/complete endpoint — see that
+            // service's remarks for why this used to be REST-only and silently leaked documents from here.
+            QueueCompletionResult result = await CompletionService.CompleteAsync(entryId);
+            if (result.OperationResult.Outcome == QueueOperationOutcome.Success)
+            {
+                await Realtime.PublishAsync(result.OperationResult.Update!);
+                if (result.DocumentsClearedUpdate is not null)
+                {
+                    await Realtime.PublishAsync(result.DocumentsClearedUpdate);
+                }
+            }
+        }
+        finally
+        {
+            this.completing.Remove(entryId);
+        }
+    }
+
+    public void Dispose() => Realtime.Changed -= this.OnRealtimeChanged;
+}

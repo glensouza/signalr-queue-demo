@@ -1,0 +1,20 @@
+@page "/staff"
+@inject StaffSessionService StaffSession
+@inject QueueRealtimeService Realtime
+
+<PageTitle>Staff Console</PageTitle>
+
+<h1>Staff Console</h1>
+
+@if (!StaffSession.IsSignedIn)
+{
+    <StaffSignIn OnSignedIn="StateHasChanged" />
+}
+else
+{
+    <QueueConsole />
+}
+
+@code {
+    protected override async Task OnInitializedAsync() => await Realtime.StartAsync();
+}

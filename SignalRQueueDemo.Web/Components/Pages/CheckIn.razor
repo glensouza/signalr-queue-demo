@@ -1,0 +1,114 @@
+@page "/checkin"
+@using System.ComponentModel.DataAnnotations
+@inject IQueueRepository QueueRepository
+@inject QueueRealtimeService Realtime
+
+<PageTitle>Check In</PageTitle>
+
+<h1>Check In</h1>
+
+@if (this.ShowForm)
+{
+    <EditForm Model="this.formModel" OnValidSubmit="this.HandleCheckInAsync">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div>
+            <label for="displayName">Name</label>
+            <InputText id="displayName" @bind-Value="this.formModel.DisplayName" />
+        </div>
+        <div>
+            <label for="ticketNumber">Ticket number</label>
+            <InputText id="ticketNumber" @bind-Value="this.formModel.TicketNumber" />
+        </div>
+
+        @if (this.errorMessage is not null)
+        {
+            <p class="check-in-error">@this.errorMessage</p>
+        }
+
+        <button type="submit" disabled="@this.submitting">Check in</button>
+    </EditForm>
+}
+else
+{
+    @foreach ((string entryId, (int position, QueueEntry entry)) in this.trackedCheckIns)
+    {
+        <PositionView EntryId="entryId" SeedPosition="position" SeedEntry="entry" OnFinished="() => this.RemoveTrackedCheckIn(entryId)" />
+    }
+
+    <button type="button" @onclick="this.ShowFormForAnother">Check in another visitor</button>
+}
+
+@code {
+    // Kiosk-friendly auto-reset: the form comes back after every completed check-in unless the visitor explicitly
+    // asked to track another one at the same time (ShowFormForAnother) — mirrors the Angular public-checkin app's
+    // "addingAnother" behavior.
+    private readonly Dictionary<string, (int Position, QueueEntry Entry)> trackedCheckIns = [];
+    private CheckInFormModel formModel = NewFormModel();
+    private bool submitting;
+    private bool addingAnother;
+    private string? errorMessage;
+
+    private bool ShowForm => this.trackedCheckIns.Count == 0 || this.addingAnother;
+
+    protected override async Task OnInitializedAsync() => await Realtime.StartAsync();
+
+    private async Task HandleCheckInAsync()
+    {
+        this.submitting = true;
+        this.errorMessage = null;
+        try
+        {
+            CheckInResult result = await QueueRepository.CheckInAsync(new CheckInRequest
+            {
+                DisplayName = this.formModel.DisplayName,
+                TicketNumber = this.formModel.TicketNumber
+            });
+
+            this.trackedCheckIns[result.Response.EntryId] = (result.Response.Position, result.Response.Entry);
+            this.addingAnother = false;
+            this.formModel = NewFormModel();
+
+            // Fire-and-forget from this page's perspective: PublishAsync never throws (see its remarks), and this
+            // circuit's own PositionView already renders from the seed above without waiting on the round-trip.
+            await Realtime.PublishAsync(result.Update);
+        }
+        catch (Exception ex)
+        {
+            this.errorMessage = "Something went wrong submitting your check-in. Please try again.";
+            Console.Error.WriteLine(ex);
+        }
+        finally
+        {
+            this.submitting = false;
+        }
+    }
+
+    private void ShowFormForAnother()
+    {
+        this.formModel = NewFormModel();
+        this.addingAnother = true;
+    }
+
+    private void RemoveTrackedCheckIn(string entryId)
+    {
+        this.trackedCheckIns.Remove(entryId);
+        this.addingAnother = false;
+    }
+
+    private static CheckInFormModel NewFormModel() => new() { TicketNumber = GenerateTicketSuggestion() };
+
+    // Client-generated suggestion only — the server assigns the entry id and position; a visitor is free to edit
+    // this before submitting. Same "A-042"-shaped fake ticket format as the seed data and the Angular kiosk app.
+    private static string GenerateTicketSuggestion() => $"A-{Random.Shared.Next(1, 999):D3}";
+
+    private sealed class CheckInFormModel
+    {
+        [Required(ErrorMessage = "Your name is required.")]
+        public string DisplayName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "A ticket number is required.")]
+        public string TicketNumber { get; set; } = string.Empty;
+    }
+}

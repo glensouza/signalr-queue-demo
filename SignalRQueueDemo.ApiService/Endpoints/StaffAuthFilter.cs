@@ -1,6 +1,5 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Mvc;
+using SignalRQueueDemo.Shared.Auth;
 
 namespace SignalRQueueDemo.ApiService.Endpoints;
 
@@ -29,14 +28,10 @@ public sealed class StaffAuthFilter(IConfiguration configuration) : IEndpointFil
 
     string? providedKey = context.HttpContext.Request.Headers[HeaderName];
 
-    // Fixed-time comparison: a naive == leaks how many leading bytes matched via response-time differences.
-    // Overkill for a POC demo key, but it's the correct habit for anything modeling a real auth boundary, and
-    // costs nothing here. FixedTimeEquals returns false outright for mismatched lengths without comparing bytes,
-    // so there's no need to length-check first.
-    bool isAuthorized = providedKey is not null
-      && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(providedKey), Encoding.UTF8.GetBytes(expectedKey));
-
-    if (!isAuthorized)
+    // The comparison itself — fixed-time, so a naive == can't leak how many leading bytes matched via
+    // response-time differences — lives in SignalRQueueDemo.Shared.Auth.StaffKeyVerifier so Blazor's staff
+    // sign-in page (which checks the key in-process, not via this filter) uses the identical check.
+    if (!StaffKeyVerifier.IsValid(providedKey, expectedKey))
     {
       return Results.Problem(
         title: "Missing or invalid staff key",

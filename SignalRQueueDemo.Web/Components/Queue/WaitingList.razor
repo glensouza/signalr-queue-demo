@@ -1,0 +1,34 @@
+@implements IDisposable
+@inject QueueRealtimeService Realtime
+
+<section class="waiting-list">
+    <h2>Waiting (@this.WaitingEntries.Count)</h2>
+
+    @if (this.WaitingEntries.Count == 0)
+    {
+        <p>No one is currently waiting.</p>
+    }
+    else
+    {
+        <ol>
+            @foreach (QueueEntry entry in this.WaitingEntries)
+            {
+                <li>@entry.TicketNumber — @PublicName.ToPublicName(entry.DisplayName)</li>
+            }
+        </ol>
+    }
+</section>
+
+@code {
+    // Sorted by check-in time ascending (oldest first) so position on the board matches "next in line" — court
+    // privacy: ticket number + name masked via PublicName, never servedBy.
+    private List<QueueEntry> WaitingEntries => [.. (Realtime.Snapshot?.Queue ?? [])
+        .Where(e => e.Status == QueueStatus.Waiting)
+        .OrderBy(e => e.CheckedInAt)];
+
+    protected override void OnInitialized() => Realtime.Changed += this.OnRealtimeChanged;
+
+    private void OnRealtimeChanged() => this.InvokeAsync(this.StateHasChanged);
+
+    public void Dispose() => Realtime.Changed -= this.OnRealtimeChanged;
+}

@@ -68,9 +68,25 @@ Endpoints (all shapes come from `SignalRQueueDemo.Contracts`):
 - **Persistence:** behind an `IQueueRepository` interface with two signature-compatible implementations — **SQLite via EF Core** (default) and **Azure Table Storage** (against the Azurite emulator) — selected by config. `SignalRQueueDemo.AppHost` always starts the Azurite Table resource, so flipping the config value at [Flipping the persistence provider](#flipping-the-persistence-provider) is the entire migration, no other code or infrastructure change.
 - **Auth model:** restricted CORS + a short-lived HMAC check-in token harden the public check-in path; a static `X-Staff-Key` header models the internal-vs-public trust boundary on staff endpoints — no real Entra ID in the POC. See [Security model](#security-model) below for exactly what's mocked, what's real, and what production must replace.
 
-### 2. `SignalRQueueDemo.Contracts` — shared DTOs/records
+### 2. `SignalRQueueDemo.Shared` — DTOs + repository abstractions + auth helpers, one project both hosts reference
 
-Referenced by `ApiService` and `Web` (Blazor). The Angular workspace mirrors the same shapes as TypeScript types.
+Started as just the DTOs/records (`SignalRQueueDemo.Contracts`); folded into this one project alongside the
+queue-service extraction #13 needed, per owner direction, so `ApiService` and `Web` take a single project
+reference instead of two. Four things live here now:
+
+- **`Contracts/`** — the wire-shape records (`QueueEntry`, `QueueUpdated`, `DocumentMetadata`, etc.), namespace
+  still `SignalRQueueDemo.Contracts` (unchanged from before the merge, so no consuming `using` needed to move).
+  The Angular workspace mirrors the same shapes as TypeScript types.
+- **`Persistence/`** — `IQueueRepository`/`IDocumentRepository` and both backends (`SqliteQueueRepository`/
+  `TableStorageQueueRepository`, `SqliteDocumentRepository`/`TableStorageDocumentRepository`,
+  `DocumentBlobStore`), extracted out of `ApiService` so `Web` (Blazor) can call them directly — see [§4](#4-signalrqueuedemoweb--blazor-server-same-three-experiences).
+  `QueueServiceCollectionExtensions.AddQueueService()` is the one `Persistence:Provider` registration switch both
+  hosts call.
+- **`Auth/StaffKeyVerifier`** — the fixed-time staff-key comparison, shared by `ApiService`'s `StaffAuthFilter`
+  and Blazor's staff sign-in page so both use the identical check.
+- **`Documents/DocumentUploadService`** — the upload validation (content-type allowlist, size cap, per-entry cap)
+  and store writes, shared by `ApiService`'s upload endpoint and Blazor's own upload component — one set of
+  rules instead of two hand-kept-in-sync copies.
 
 ### 3. Angular workspace (`SignalRQueueDemo.Angular/`) — three apps, one shared library
 
@@ -86,7 +102,35 @@ A shared library holds the API client, the TypeScript contract mirrors, and the 
 
 ### 4. `SignalRQueueDemo.Web` — Blazor Server, same three experiences
 
-Public check-in, internal call-next, and queue display as Blazor pages — self-encapsulated, not a REST client of the API: check-in/call-next/complete call directly into a shared queue-service library also referenced by `SignalRQueueDemo.ApiService`, reusing the same `IQueueRepository` code rather than round-tripping to its own sibling process. A direct SignalR `HubConnection` to `QueueHub` still handles live updates, and doubles as the way Blazor tells the hub to broadcast after one of its own local writes (see [`docs/decisions.md`](docs/decisions.md)). This is the comparison stack: the UI stays simple on purpose, the point is comparing plumbing, not polish.
+`/checkin`, `/staff`, `/display` — the same three experiences the Angular apps provide, self-encapsulated, not a
+REST client of the API: check-in/call-next/complete call directly into `SignalRQueueDemo.Shared`'s
+`IQueueRepository` (also referenced by `ApiService`), rather than round-tripping to its own sibling process. A
+direct SignalR `HubConnection` (`QueueRealtimeService`, the .NET twin of the Angular shared library's
+`QueueHubService`) still handles live updates, and doubles as the way Blazor tells `QueueHub` to broadcast after
+one of its own local writes via a new `NotifyMutation` hub method (see [`docs/decisions.md`](docs/decisions.md)
+for the trust design behind it — it never trusts a caller-supplied broadcast payload, only a sequence number,
+re-reading the actual change from the repository before broadcasting).
+
+**Status:** all three pages are built. `/checkin` is an `EditForm` (name + auto-suggested editable ticket) whose
+`PositionView` derives live status/position from the same snapshot the hub keeps, with document upload via the
+shared `DocumentUploadService`. `/staff` gates behind an in-process staff-key check (`StaffKeyVerifier`, no REST
+round-trip) before showing the waiting/serving console (Call Next/Complete) and a document viewer; since an
+`<iframe>`/`<img>` can't carry the `X-Staff-Key` header the REST document endpoints use, viewing goes through a
+local `GET /staff/documents/{entryId}/{docId}` endpoint hosted by `Web` itself, gated by a short-lived
+per-document HMAC token (`DocumentAccessTokenService`) instead — still not a call to `ApiService`'s own REST
+endpoint. `/display` is read-only, masks names the same way the Angular board does (`PublicName.ToPublicName`,
+an app-local C# port of `toPublicName`), and never shows `servedBy`. This is the comparison stack: the UI stays
+simple on purpose, the point is comparing plumbing, not polish.
+
+Two things worth flagging for the vendor team, found while wiring this up (see `docs/decisions.md` for the full
+entries): Blazor's `HubConnection` can't resolve Aspire's `http://apiservice` logical scheme the way a plain
+`HttpClient` can — SignalR's WebSocket transport opens a raw socket that bypasses the service-discovery-aware
+`HttpMessageHandler` pipeline, so `QueueRealtimeService` reads the concrete resolved endpoint
+(`services:apiservice:http:0`) directly from config instead. And `SignalRQueueDemo.AppHost` originally wired
+Azurite/the `QueueDb` connection string only to `apiservice` — since Blazor now talks to the same store directly,
+`webfrontend` needed the identical wiring, including an **absolute** `QueueDb` path (the plain
+`Data Source=App_Data/queue.db` in each project's own `appsettings.json` is process-relative, so two separate
+processes would otherwise silently open two different files).
 
 ### 5. `SignalRQueueDemo.AppHost` — orchestrates all of it
 
@@ -140,14 +184,14 @@ Work is executed as an ordered, dependency-aware backlog of 14 work items, each 
 
 ## Current repo status
 
-.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository`, now with two swappable backends, plus document upload/viewing behind `IDocumentRepository` and `DocumentBlobStore`. The Angular workspace (`SignalRQueueDemo.Angular/`) has its `shared` library and three app shells built, `public-checkin` (the kiosk check-in + live-position + document-upload UI) built on top of it, and all three apps now containerized and wired into `aspire run` — see [Angular workspace](#3-angular-workspace-signalrqueuedemoangular--three-apps-one-shared-library) and [Containers](#containers-the-angular-apps) above. The Blazor `Web` project and the other two Angular app UIs (`internal-queue`, `queue-display`) are still shells/not-yet-built — they run as containers already, but with placeholder content until their real UIs land.
+.NET Aspire scaffold (`net10.0`, Aspire.AppHost.Sdk 13.4.6) with the queue API live behind `IQueueRepository`, now with two swappable backends, plus document upload/viewing behind `IDocumentRepository` and `DocumentBlobStore`. The Angular workspace (`SignalRQueueDemo.Angular/`) has its `shared` library and three app shells built, `public-checkin` (the kiosk check-in + live-position + document-upload UI) built on top of it, and all three apps now containerized and wired into `aspire run` — see [Angular workspace](#3-angular-workspace-signalrqueuedemoangular--three-apps-one-shared-library) and [Containers](#containers-the-angular-apps) above. The Blazor `Web` project's three experiences (`/checkin`, `/staff`, `/display`) are now built too — see [§4](#4-signalrqueuedemoweb--blazor-server-same-three-experiences) — with `internal-queue` and `queue-display` (Angular) still real-UI-pending; they run as containers already, but with placeholder content until their real UIs land.
 
 | Project / path | Purpose |
 |---|---|
-| `SignalRQueueDemo.AppHost` | Aspire orchestrator — brings up every resource with one command: `ApiService`/`Web` as project resources, the three Angular apps as `AddDockerfile` container resources (`API_BASE_URL` wired via an endpoint reference; CORS handled by the API's loopback allowance, not injected — see [above](#5-signalrqueuedemoapphost--orchestrates-all-of-it)), the Azurite Table Storage and Blob Storage emulator resources, plus the Azure SignalR Emulator when `UseAzureSignalR=true` (see [Scaling past self-hosted](#scaling-past-self-hosted-the-azure-signalr-story)). |
-| `SignalRQueueDemo.ApiService` | Minimal API: `GET /checkin/token`, `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, `GET /queue/since/{sequenceNumber}`, backed by `IQueueRepository` → `SqliteQueueRepository` or `TableStorageQueueRepository` (config-selected); plus `POST /checkin/{id}/documents`, `GET /queue/{id}/documents`, `GET /queue/{id}/documents/{docId}`, backed by `IDocumentRepository` (same config-selected backend) and `DocumentBlobStore` (Azurite Blob Storage, not config-selected); staff routes (`call-next`, `complete`, `GET /staff/verify` — the sign-in key check — and document viewing) gated by `StaffAuthFilter`, the check-in path by a short-lived check-in token, all browser surfaces (REST + hub) behind the `KnownFrontends` CORS policy (see [Security model](#security-model)); plus the self-hosted `QueueHub` (`/hubs/queue`) broadcasting `QueueUpdated`, and the `UseAzureSignalR` escape hatch (`AzureSignalRDefaultModeStub`, `AzureSignalRServerlessDemoService`). |
-| `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums (QueueEntry, QueueStatus, QueueUpdated, QueueStateResponse, DocumentMetadata, etc.) — single source of truth for all wire shapes. |
-| `SignalRQueueDemo.Web` | Blazor Server frontend (template default today; becomes the three Blazor experiences in later work). |
+| `SignalRQueueDemo.AppHost` | Aspire orchestrator — brings up every resource with one command: `ApiService`/`Web` as project resources (both referencing the same Azurite Table/Blob resources and the same absolute `QueueDb` connection string — see [§4](#4-signalrqueuedemoweb--blazor-server-same-three-experiences)), the three Angular apps as `AddDockerfile` container resources (`API_BASE_URL` wired via an endpoint reference; CORS handled by the API's loopback allowance, not injected — see [above](#5-signalrqueuedemoapphost--orchestrates-all-of-it)), the Azurite Table Storage and Blob Storage emulator resources, plus the Azure SignalR Emulator when `UseAzureSignalR=true` (see [Scaling past self-hosted](#scaling-past-self-hosted-the-azure-signalr-story)). |
+| `SignalRQueueDemo.ApiService` | Minimal API: `GET /checkin/token`, `/checkin`, `/queue/call-next`, `/queue/{id}/complete`, `GET /queue`, `GET /queue/since/{sequenceNumber}`, backed by `IQueueRepository` → `SqliteQueueRepository` or `TableStorageQueueRepository` (config-selected); plus `POST /checkin/{id}/documents`, `GET /queue/{id}/documents`, `GET /queue/{id}/documents/{docId}`, backed by `IDocumentRepository` (same config-selected backend) and `DocumentBlobStore` (Azurite Blob Storage, not config-selected); staff routes (`call-next`, `complete`, `GET /staff/verify` — the sign-in key check — and document viewing) gated by `StaffAuthFilter`, the check-in path by a short-lived check-in token, all browser surfaces (REST + hub) behind the `KnownFrontends` CORS policy (see [Security model](#security-model)); plus the self-hosted `QueueHub` (`/hubs/queue`) broadcasting `QueueUpdated` (and, since #13, handling Blazor's `NotifyMutation` calls), and the `UseAzureSignalR` escape hatch (`AzureSignalRDefaultModeStub`, `AzureSignalRServerlessDemoService`). |
+| `SignalRQueueDemo.Shared` | DTOs/records/enums (QueueEntry, QueueStatus, QueueUpdated, QueueStateResponse, DocumentMetadata, etc.), `IQueueRepository`/`IDocumentRepository` + both backends, `StaffKeyVerifier`, `DocumentUploadService` — single source of truth for wire shapes and persistence, referenced by both `ApiService` and `Web`. See [§2](#2-signalrqueuedemoshared--dtos--repository-abstractions--auth-helpers-one-project-both-hosts-reference). |
+| `SignalRQueueDemo.Web` | Blazor Server — `/checkin`, `/staff`, `/display`, calling `SignalRQueueDemo.Shared` directly (no REST client) plus a `QueueRealtimeService` `HubConnection` for live push/notify. See [§4](#4-signalrqueuedemoweb--blazor-server-same-three-experiences). |
 | `SignalRQueueDemo.Angular/` | Angular workspace: `projects/shared` library (TypeScript `Contracts` mirrors, `QueueApiService`, `QueueHubService`) plus `projects/public-checkin`, `projects/internal-queue`, `projects/queue-display` app shells (real UIs land in #9-#11). See [`SignalRQueueDemo.Angular/README.md`](SignalRQueueDemo.Angular/README.md). |
 | `SignalRQueueDemo.ServiceDefaults` | Shared Aspire defaults — OpenTelemetry, health checks, service discovery. |
 | `CLAUDE.md` | Coding + documentation standards for all contributors. |
@@ -289,9 +333,27 @@ The API's `Cors:AllowedOrigins` already lists `http://localhost:4202`, so the br
 
 **Court privacy note:** the board shows the ticket number and the visitor's name **masked to first name + last initial** (e.g. "Jane T."), never the full surname — enough to recognise your own row without publishing who is at the court to the whole room. Full names appear only on the staff console (behind staff auth). This is a deliberate relaxation of the earlier ticket-only rule — see the 2026-07-12 decisions entry; the masking is one shared helper (`toPublicName`) if you want to change it. The board also shows a **check in from your phone** QR code + URL (the public-checkin address), generated locally — in the POC that address is `localhost`, so the QR illustrates the pattern rather than being scannable from a separate phone.
 
+### Running the Blazor experiences
+
+Blazor Server doesn't run as a separate dev-server process the way the Angular apps do — it's one ASP.NET Core app (`SignalRQueueDemo.Web`) serving all three pages, so `aspire run` is the only way to exercise it against live data (it needs `ApiService`'s Azurite/`QueueDb` wiring — see [§4](#4-signalrqueuedemoweb--blazor-server-same-three-experiences)). Open the `webfrontend` resource's URL from the Aspire dashboard, then:
+
+1. **`/checkin`:** enter a fake name, keep or edit the suggested ticket number, submit. The view switches to a live position screen ("You are #N in line") — N is derived from the live snapshot, same as the Angular kiosk. Attach a PDF/JPEG/PNG (≤10 MB) via the file picker; a wrong type or oversized file is rejected client-side against the same `DocumentUploadService.MaxDocumentSizeBytes`/allowlist constants the server enforces (no separate hand-copied number, unlike the Angular component — see [§4](#4-signalrqueuedemoweb--blazor-server-same-three-experiences)).
+2. **`/staff`:** sign in with the `StaffAuth:Key` value from `SignalRQueueDemo.Web/appsettings.json` (must match `SignalRQueueDemo.ApiService/appsettings.json`'s value — see [§4](#4-signalrqueuedemoweb--blazor-server-same-three-experiences)). The console shows Waiting/Serving, live-updating from the same check-in above. Call Next, Complete, and — once a document is attached — View documents (renders inline via the local token-gated streaming endpoint, not a call to `ApiService`'s REST endpoint).
+3. **`/display`:** read-only board, ticket + masked name (e.g. "Jane T."), no `servedBy`, Completed entries excluded. Confirm it updates live as `/staff` calls next/completes.
+4. **Reconnect/catch-up:** on `/display`, DevTools → Network → **Offline**, make a couple of changes elsewhere (another check-in, a call-next), then **Online**. The board catches up within a few seconds — same acceptance criterion as the Angular apps, exercised through `QueueRealtimeService`'s direct-repository catch-up instead of an HTTP call.
+5. **Mixed-stack:** with an Angular app also running (e.g. `npm run start:internal-queue`), check in via the Blazor `/checkin` page and confirm the entry appears live on the Angular staff console, and the reverse (an Angular kiosk check-in appearing on Blazor's `/staff`) — both directions go through the same `QueueHub` broadcasts.
+
 ## Angular vs. Blazor comparison
 
-Filled in from actual observations, not boilerplate: dev experience, container image size and startup time, what service discovery looked like from each side, and the plumbing delta for the reconnect logic. This section is meant to help the team pick a direction.
+Filled in from actual observations building #13, not boilerplate:
+
+- **Dev experience.** Angular's three apps are independently runnable dev servers (`npm run start:*`) against a standalone `dotnet run` API — fast inner-loop iteration on one app at a time. Blazor Server has no equivalent: because it now calls the shared repository directly (not the REST API), it needs the same Azurite/`QueueDb` wiring `ApiService` has, which only `aspire run` provides — see [Running the Blazor experiences](#running-the-blazor-experiences). Editing one Blazor page means a full Aspire restart (or `dotnet watch --project SignalRQueueDemo.Web` once the storage wiring is up), not a standalone hot-reloading dev server.
+- **The reconnect/catch-up plumbing delta.** This is the single biggest difference the two stacks exposed. Angular's `QueueHubService` talks to a **process it doesn't share code with** — every question ("what did I miss", "what's current state", "record this mutation") is an HTTP call, so it needs a full REST client, and reconnect is a network problem "solved once" for browser code that can't see the server's internals. Blazor's `QueueRealtimeService` runs **in the same process as a full repository handle** — catch-up and the polling fallback are the exact same in-process method calls `ApiService`'s own REST handlers make, no HTTP round-trip, no separate client to keep in sync. The one thing Blazor still needs an actual network hop for is telling *other* clients about its own writes (`NotifyMutation`, since the hub lives in a different process) — everywhere else, direct repository access made the client noticeably simpler to write, at the cost of the two processes needing to agree on infrastructure wiring that Angular (talking only through the public REST/hub surface) never had to care about.
+- **Validation/config drift.** Angular's `DocumentUpload` component hand-copies the server's content-type allowlist and size cap, with a comment saying "must match the server." Blazor's equivalent references the exact same `DocumentUploadService.MaxDocumentSizeBytes`/`AllowedContentTypes` constants the API itself enforces — literally impossible to drift, not just documented as must-not-drift. This is a direct benefit of the shared-project extraction #13 needed anyway.
+- **Container footprint vs. process footprint.** Each Angular app is a ~93 MB static-file container (see [Containers](#containers-the-angular-apps)) with no server-side compute of its own — nginx serves pre-built JS. Blazor Server is the opposite shape: no container image comparison applies (it's not containerized in this POC, unlike the Angular apps — see `SignalRQueueDemo.AppHost`), but it holds a live server-side circuit (state + a `HubConnection`) per connected browser tab for the life of the session, a real per-user memory/compute cost the static Angular containers don't have at all.
+- **Service discovery.** Aspire's `WithReference(apiService)` "just works" for Blazor's server-to-server calls in the common case (a plain `HttpClient` resolving `http://apiservice`), but SignalR's WebSocket transport is the one surface where that abstraction leaks — see [§4](#4-signalrqueuedemoweb--blazor-server-same-three-experiences) for why `QueueRealtimeService` reads the concrete endpoint from config instead. The Angular containers never hit this because they're outside Aspire's network entirely and always resolve the API's external, browser-reachable address.
+
+This section is meant to help the team pick a direction — neither stack "wins" outright: Angular pays for its REST-client indirection with more boilerplate and duplicated validation, Blazor pays for its direct-repository simplicity with tighter coupling to Aspire's orchestration and no standalone dev-server story.
 
 ## Open items (from the 2026-07-09 design review)
 

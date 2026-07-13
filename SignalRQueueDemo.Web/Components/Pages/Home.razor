@@ -5,7 +5,12 @@
 <h1>SignalR Queue Demo</h1>
 
 <p>
-    Blazor Server implementation of the DASH 2.0 walk-in queue POC.
-    The three experiences (public check-in, staff call-next console, queue display)
-    land here per GitHub issue #13.
+    Blazor Server implementation of the DASH 2.0 walk-in queue POC — the same three experiences as the
+    Angular apps, self-encapsulated (shared code, no REST calls to the API; see docs/decisions.md).
 </p>
+
+<ul>
+    <li><a href="checkin">Check In</a> — public kiosk check-in and document upload.</li>
+    <li><a href="staff">Staff Console</a> — call-next/complete, document viewing (staff key required).</li>
+    <li><a href="display">Queue Display</a> — public read-only waiting-room board.</li>
+</ul>

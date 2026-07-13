@@ -1,0 +1,80 @@
+@using Microsoft.AspNetCore.Components.Forms
+@inject DocumentUploadService UploadService
+@inject QueueRealtimeService Realtime
+
+<div class="document-upload">
+    <label for="document-file">Attach a supporting document (PDF, JPG, or PNG, up to 10 MB)</label>
+    <InputFile id="document-file" OnChange="HandleFileSelectedAsync" accept=".pdf,.jpg,.jpeg,.png" disabled="@uploading" />
+
+    @if (uploading)
+    {
+        <p>Uploading…</p>
+    }
+    @if (errorMessage is not null)
+    {
+        <p class="upload-error">@errorMessage</p>
+    }
+    @if (uploadedFileNames.Count > 0)
+    {
+        <ul class="uploaded-files">
+            @foreach (string name in uploadedFileNames)
+            {
+                <li>@name</li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string EntryId { get; set; } = string.Empty;
+
+    private bool uploading;
+    private string? errorMessage;
+    private readonly List<string> uploadedFileNames = [];
+
+    // Client-side pre-check mirrors DocumentUploadService.MaxDocumentSizeBytes exactly — both read the same
+    // constant, so unlike Angular's DocumentUpload component (which duplicates the number by hand and comments
+    // "must match the server"), there's no separate value that can drift out of sync here.
+    private async Task HandleFileSelectedAsync(InputFileChangeEventArgs e)
+    {
+        errorMessage = null;
+        IBrowserFile file = e.File;
+
+        if (file.Size > DocumentUploadService.MaxDocumentSizeBytes)
+        {
+            errorMessage = $"File exceeds the {DocumentUploadService.MaxDocumentSizeBytes / (1024 * 1024)} MB upload limit.";
+            return;
+        }
+
+        uploading = true;
+        try
+        {
+            await using Stream stream = file.OpenReadStream(DocumentUploadService.MaxDocumentSizeBytes);
+            DocumentUploadResult result = await UploadService.UploadAsync(
+                EntryId, file.Name, file.ContentType, file.Size, stream);
+
+            if (result.Outcome == DocumentUploadOutcome.Success)
+            {
+                uploadedFileNames.Add(file.Name);
+                if (result.Update is not null)
+                {
+                    await Realtime.PublishAsync(result.Update);
+                }
+            }
+            else
+            {
+                errorMessage = result.Outcome switch
+                {
+                    DocumentUploadOutcome.EntryNotFound => "This check-in could not be found.",
+                    DocumentUploadOutcome.LimitReached => "Maximum number of documents reached for this check-in.",
+                    _ => result.FailureDetail ?? "Upload failed."
+                };
+            }
+        }
+        finally
+        {
+            uploading = false;
+        }
+    }
+}

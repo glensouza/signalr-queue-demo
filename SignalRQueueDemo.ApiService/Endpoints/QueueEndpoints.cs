@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using SignalRQueueDemo.ApiService.Hubs;
-using SignalRQueueDemo.ApiService.Persistence;
-using SignalRQueueDemo.ApiService.Persistence.Blob;
 using SignalRQueueDemo.Contracts;
+using SignalRQueueDemo.Shared.Documents;
+using SignalRQueueDemo.Shared.Persistence;
 
 namespace SignalRQueueDemo.ApiService.Endpoints;
 
@@ -119,54 +119,30 @@ public static class QueueEndpoints
 
   private static async Task<IResult> HandleCompleteAsync(
     string id,
-    IQueueRepository repository,
-    IDocumentRepository documentRepository,
-    DocumentBlobStore blobStore,
+    QueueCompletionService completionService,
     QueueBroadcaster broadcaster,
-    ILoggerFactory loggerFactory,
     CancellationToken ct)
   {
-    QueueOperationResult result = await repository.CompleteAsync(id, ct);
+    // Completion + document cleanup both live in QueueCompletionService (SignalRQueueDemo.Shared) so Blazor's
+    // staff console — which calls it directly, bypassing this endpoint — gets the same document cleanup on
+    // complete. Broadcasting stays here: it's the one part of this flow that differs per host (this endpoint
+    // calls QueueBroadcaster directly; Blazor calls QueueRealtimeService.PublishAsync, a hub round-trip).
+    QueueCompletionResult result = await completionService.CompleteAsync(id, ct);
 
-    if (result.Outcome == QueueOperationOutcome.Success)
+    if (result.OperationResult.Outcome == QueueOperationOutcome.Success)
     {
       // Success always carries a non-null Update (QueueOperationResult.Success); Failure never reports Success.
-      await broadcaster.BroadcastAsync(result.Update!);
+      await broadcaster.BroadcastAsync(result.OperationResult.Update!);
 
-      // A visitor's supporting documents exist only to be reviewed while they're in the queue; once completed there's
-      // no reason to keep them, so this deletes both halves. Metadata FIRST, then blobs: a failure partway can then
-      // only ever leave an orphaned blob (harmless, cleanable) — never a metadata row pointing at content that's
-      // already gone, which is the very "content missing" failure this whole change exists to avoid. Best-effort and
-      // off the response's critical path: the entry is already completed and broadcast, so a cleanup hiccup logs and
-      // moves on rather than turning a successful complete into a 500 the caller would retry.
-      try
+      if (result.DocumentsClearedUpdate is not null)
       {
-        await documentRepository.DeleteDocumentsAsync(id, ct);
-        await blobStore.DeleteAllForEntryAsync(id, ct);
-
-        // The broadcast above (from CompleteAsync) necessarily precedes this deletion, so it still carries the
-        // entry's pre-deletion DocumentCount. Push a second, document-only update — same call as the upload path
-        // in DocumentEndpoints.HandleUploadDocumentAsync — so connected clients see DocumentCount drop to 0
-        // instead of the completed entry's last-known count staying stale forever. This also fulfils the
-        // RecordDocumentChangeAsync contract ("records that documents were cleared"), which the completion path
-        // previously left unhonoured. Low stakes even on failure: completed entries are filtered out of every UI,
-        // so a stale count here was only ever a latent inconsistency, never a visible bug.
-        QueueUpdated? documentsClearedUpdate = await repository.RecordDocumentChangeAsync(id, ct);
-        if (documentsClearedUpdate is not null)
-        {
-          await broadcaster.BroadcastAsync(documentsClearedUpdate);
-        }
-      }
-      catch (Exception ex)
-      {
-        loggerFactory.CreateLogger("SignalRQueueDemo.ApiService.Endpoints.QueueEndpoints").LogWarning(
-          ex, "Completed entry {EntryId} but failed to delete its documents; content may be orphaned in Blob Storage.", id);
+        await broadcaster.BroadcastAsync(result.DocumentsClearedUpdate);
       }
     }
 
-    return result.Outcome switch
+    return result.OperationResult.Outcome switch
     {
-      QueueOperationOutcome.Success => Results.Ok(result.Update),
+      QueueOperationOutcome.Success => Results.Ok(result.OperationResult.Update),
       QueueOperationOutcome.EntryNotFound => Results.NotFound(new ProblemDetails
       {
         Title = "Entry not found",

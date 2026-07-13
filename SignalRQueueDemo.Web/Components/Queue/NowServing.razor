@@ -1,0 +1,32 @@
+@implements IDisposable
+@inject QueueRealtimeService Realtime
+
+<section class="now-serving">
+    <h2>Now Serving</h2>
+
+    @if (this.ServingEntries.Count == 0)
+    {
+        <p>No one is currently being served.</p>
+    }
+    else
+    {
+        <ul>
+            @foreach (QueueEntry entry in this.ServingEntries)
+            {
+                <li>@entry.TicketNumber — @PublicName.ToPublicName(entry.DisplayName)</li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    // Court privacy: ticket number + name masked via PublicName — never servedBy (staff-only, see QueueConsole).
+    private List<QueueEntry> ServingEntries => [.. (Realtime.Snapshot?.Queue ?? [])
+        .Where(e => e.Status == QueueStatus.Serving)];
+
+    protected override void OnInitialized() => Realtime.Changed += this.OnRealtimeChanged;
+
+    private void OnRealtimeChanged() => this.InvokeAsync(this.StateHasChanged);
+
+    public void Dispose() => Realtime.Changed -= this.OnRealtimeChanged;
+}

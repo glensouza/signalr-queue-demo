@@ -7,25 +7,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SignalRQueueDemo.Contracts\SignalRQueueDemo.Contracts.csproj" />
+    <ProjectReference Include="..\SignalRQueueDemo.Shared\SignalRQueueDemo.Shared.csproj" />
     <ProjectReference Include="..\SignalRQueueDemo.ServiceDefaults\SignalRQueueDemo.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.9" />
     <!-- Direct pin to override the vulnerable Microsoft.OpenApi 2.0.0 pulled in transitively by
          Microsoft.AspNetCore.OpenApi (GHSA-v5pm-xwqc-g5wc). Stays on the 2.x line for compatibility. -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.10.0" />
-    <!-- Direct pin to override the vulnerable SQLitePCLRaw.bundle_e_sqlite3 2.1.11 (bundled SQLite < 3.50.2)
-         pulled in transitively by Microsoft.EntityFrameworkCore.Sqlite (GHSA-2m69-gcr7-jv3q / CVE-2025-6965). -->
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
-    <!-- Azure Table Storage client integration (issue #4's second IQueueRepository backend): registers a
-         TableServiceClient wired to the Azurite emulator via Aspire service discovery — see Program.cs. -->
-    <PackageReference Include="Aspire.Azure.Data.Tables" Version="13.4.6" />
-    <!-- Azure Blob Storage client integration (issue #5's document-content backend): registers a
-         BlobServiceClient wired to the Azurite emulator via Aspire service discovery — see Program.cs. -->
-    <PackageReference Include="Aspire.Azure.Storage.Blobs" Version="13.4.6" />
     <!-- Serverless-mode SDK for the UseAzureSignalR feature flag: ServiceManagerBuilder ->
          ServiceHubContext is how a server pushes through Azure SignalR (or its local emulator, which only
          supports this mode) without an ASP.NET Core hub receiving the connection — see

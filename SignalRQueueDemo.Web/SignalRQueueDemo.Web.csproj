@@ -7,8 +7,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SignalRQueueDemo.Contracts\SignalRQueueDemo.Contracts.csproj" />
+    <ProjectReference Include="..\SignalRQueueDemo.Shared\SignalRQueueDemo.Shared.csproj" />
     <ProjectReference Include="..\SignalRQueueDemo.ServiceDefaults\SignalRQueueDemo.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Blazor opens its own HubConnection to QueueHub — both to receive QueueUpdated pushes and to call
+         NotifyMutation after a direct repository write (see docs/decisions.md's "Blazor is self-encapsulated").
+         No REST client package is referenced here on purpose: Blazor never calls ApiService's REST endpoints. -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.9" />
   </ItemGroup>
 
 </Project>

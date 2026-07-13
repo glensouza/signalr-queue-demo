@@ -1,0 +1,51 @@
+@inject StaffSessionService StaffSession
+@inject IConfiguration Configuration
+
+<div class="staff-sign-in">
+    <h2>Staff Sign In</h2>
+
+    <EditForm Model="this" OnValidSubmit="this.HandleSignInAsync">
+        <div>
+            <label for="staffKey">Staff key</label>
+            <InputText id="staffKey" type="password" @bind-Value="this.enteredKey" />
+        </div>
+
+        @if (this.errorMessage is not null)
+        {
+            <p class="sign-in-error">@this.errorMessage</p>
+        }
+
+        <button type="submit">Sign in</button>
+    </EditForm>
+
+    <!--
+      Deliberately doesn't say what the key IS — just where a real deployment keeps it (StaffAuth:Key, via
+      user-secrets/environment; see CLAUDE.md's "no secrets in source control"). Models the internal-vs-public
+      trust boundary the same way ApiService's StaffAuthFilter does; production replaces both with Entra ID.
+    -->
+    <p class="sign-in-hint">Ask a supervisor for the staff key (configured as <code>StaffAuth:Key</code>).</p>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback OnSignedIn { get; set; }
+
+    private string enteredKey = string.Empty;
+    private string? errorMessage;
+
+    private async Task HandleSignInAsync()
+    {
+        string expectedKey = Configuration["StaffAuth:Key"]
+            ?? throw new InvalidOperationException("Missing required configuration 'StaffAuth:Key'.");
+
+        if (!StaffKeyVerifier.IsValid(this.enteredKey, expectedKey))
+        {
+            this.errorMessage = "Invalid staff key.";
+            return;
+        }
+
+        this.errorMessage = null;
+        StaffSession.SignIn(this.enteredKey);
+        await this.OnSignedIn.InvokeAsync();
+    }
+}

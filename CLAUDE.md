@@ -35,7 +35,7 @@ npm run start:public-checkin    # or start:internal-queue / start:queue-display
 |---|---|
 | `SignalRQueueDemo.AppHost` | Aspire orchestrator — the only thing you run. |
 | `SignalRQueueDemo.ApiService` | Minimal API + self-hosted `QueueHub` (SignalR). |
-| `SignalRQueueDemo.Contracts` | Shared DTOs/records/enums referenced by API and Blazor. Angular mirrors these shapes in TypeScript. |
+| `SignalRQueueDemo.Shared` | DTOs/records/enums, `IQueueRepository`/`IDocumentRepository` + both backends, staff-key/document-upload helpers — referenced by both `ApiService` and `Web` so a change to a wire shape or a repository method affects both from one place. Angular mirrors the DTO shapes in TypeScript. |
 | `SignalRQueueDemo.Web` | Blazor Server implementation of the three experiences. |
 | `SignalRQueueDemo.ServiceDefaults` | Aspire defaults: OpenTelemetry, health checks, service discovery. |
 | `SignalRQueueDemo.Angular` | Angular workspace (one CLI multi-project workspace): `projects/shared` library + three app projects below. |

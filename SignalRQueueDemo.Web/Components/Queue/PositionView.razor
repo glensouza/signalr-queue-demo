@@ -1,0 +1,108 @@
+@implements IDisposable
+@inject QueueRealtimeService Realtime
+
+<div class="position-view">
+    @switch (CurrentStatus)
+    {
+        case QueueStatus.Serving:
+            <p class="status-serving">It's your turn — ticket @CurrentEntry?.TicketNumber, please see staff now.</p>
+            break;
+        case QueueStatus.Completed:
+            <p class="status-completed">Thank you, @CurrentEntry?.DisplayName. Resetting in @secondsRemaining…</p>
+            break;
+        default:
+            <p class="status-waiting">You are #@CurrentPosition in line (ticket @(CurrentEntry?.TicketNumber ?? SeedEntry.TicketNumber)).</p>
+            <DocumentUpload EntryId="EntryId" />
+            break;
+    }
+
+    <button type="button" @onclick="() => OnFinished.InvokeAsync()">Stop tracking</button>
+</div>
+
+@code {
+    /// <summary>Auto-reset countdown after Completed — same duration as the Angular reference client's PositionView.</summary>
+    private const int AutoResetSeconds = 10;
+
+    [Parameter, EditorRequired]
+    public string EntryId { get; set; } = string.Empty;
+
+    /// <summary>Seed position from the direct check-in call's own response — rendered until the realtime snapshot first contains this entry.</summary>
+    [Parameter, EditorRequired]
+    public int SeedPosition { get; set; }
+
+    /// <summary>Seed entry from the direct check-in call's own response — same "render immediately, then trust the snapshot" reasoning as SeedPosition.</summary>
+    [Parameter, EditorRequired]
+    public QueueEntry SeedEntry { get; set; } = null!;
+
+    [Parameter]
+    public EventCallback OnFinished { get; set; }
+
+    private Timer? resetTimer;
+    private int secondsRemaining = AutoResetSeconds;
+
+    // Position is always derived live from the authoritative snapshot, never trusted from the seed beyond the
+    // very first render — mirrors the Angular PositionView's documented behavior exactly.
+    private QueueEntry? CurrentEntry =>
+        Realtime.Snapshot?.Queue.FirstOrDefault(e => e.Id == this.EntryId);
+
+    private QueueStatus CurrentStatus => this.CurrentEntry?.Status ?? this.SeedEntry.Status;
+
+    private int CurrentPosition
+    {
+        get
+        {
+            if (Realtime.Snapshot is null)
+            {
+                return this.SeedPosition;
+            }
+
+            List<QueueEntry> waiting = [.. Realtime.Snapshot.Queue
+                .Where(e => e.Status == QueueStatus.Waiting)
+                .OrderBy(e => e.CheckedInAt)];
+            int index = waiting.FindIndex(e => e.Id == this.EntryId);
+            return index >= 0 ? index + 1 : this.SeedPosition;
+        }
+    }
+
+    protected override void OnInitialized() => Realtime.Changed += this.OnRealtimeChanged;
+
+    private void OnRealtimeChanged() => this.InvokeAsync(() =>
+    {
+        if (this.CurrentStatus == QueueStatus.Completed)
+        {
+            this.StartResetCountdownIfNeeded();
+        }
+
+        this.StateHasChanged();
+    });
+
+    private void StartResetCountdownIfNeeded()
+    {
+        if (this.resetTimer is not null)
+        {
+            return;
+        }
+
+        this.resetTimer = new Timer(_ => this.InvokeAsync(this.Tick), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private async Task Tick()
+    {
+        this.secondsRemaining--;
+        if (this.secondsRemaining <= 0)
+        {
+            this.resetTimer?.Dispose();
+            this.resetTimer = null;
+            await this.OnFinished.InvokeAsync();
+            return;
+        }
+
+        this.StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        Realtime.Changed -= this.OnRealtimeChanged;
+        this.resetTimer?.Dispose();
+    }
+}

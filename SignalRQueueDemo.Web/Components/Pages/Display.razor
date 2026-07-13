@@ -1,0 +1,29 @@
+@page "/display"
+@implements IDisposable
+@inject QueueRealtimeService Realtime
+
+<PageTitle>Queue Display</PageTitle>
+
+<h1>Queue Display</h1>
+
+@if (Realtime.ConnectionState == QueueConnectionState.Polling)
+{
+    <p class="reconnecting-banner">Reconnecting…</p>
+}
+
+<NowServing />
+<WaitingList />
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        // Subscribed here (not just in the child components) so this page's own "Reconnecting…" banner reacts to
+        // ConnectionState changes too — NowServing/WaitingList only care about Snapshot.
+        Realtime.Changed += this.OnRealtimeChanged;
+        await Realtime.StartAsync();
+    }
+
+    private void OnRealtimeChanged() => this.InvokeAsync(this.StateHasChanged);
+
+    public void Dispose() => Realtime.Changed -= this.OnRealtimeChanged;
+}

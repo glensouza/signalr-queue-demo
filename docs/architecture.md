@@ -41,13 +41,23 @@ flowchart TB
     api -. "AzureSignalRServerlessDemoService:<br/>ServiceHubContext push + a client<br/>connected directly to the emulator" .-> sigemu
 ```
 
-**Note on Blazor's client shape:** `SignalRQueueDemo.Web` is self-encapsulated — check-in/call-next/complete call
-directly into a shared queue-service library also referenced by `SignalRQueueDemo.ApiService` (no REST calls to
-the API). Blazor and `ApiService` still run as separate Aspire process resources, so Blazor can't reach
-`QueueHub`'s broadcast the way `QueueEndpoints` does; it closes that gap by reusing the SignalR `HubConnection`
-it already holds for live updates — after a local mutation, it invokes a hub method that tells `QueueHub` to
-broadcast, so every other client (Angular, other Blazor sessions) still sees the change. See "Blazor is
-self-encapsulated" in `docs/decisions.md` for the full reasoning.
+**Note on Blazor's client shape (implemented in #13):** `SignalRQueueDemo.Web` is self-encapsulated —
+check-in/call-next/complete call directly into `SignalRQueueDemo.Shared`'s `IQueueRepository`, also referenced by
+`SignalRQueueDemo.ApiService` (no REST calls to the API). Blazor and `ApiService` still run as separate Aspire
+process resources, so Blazor can't reach `QueueHub`'s broadcast the way `QueueEndpoints` does; it closes that gap
+by reusing the SignalR `HubConnection` it already holds for live updates (`QueueRealtimeService`, the .NET twin
+of the Angular shared library's `QueueHubService`) — after a local mutation, it invokes `QueueHub.NotifyMutation`,
+which **never trusts the caller's own claim about what changed**: it re-reads the actual entry/summary from the
+repository before broadcasting, so a hostile caller on the hub (CORS doesn't gate non-browser callers at all) can
+at most trigger a redundant broadcast of already-public data, never spoof state. See "Blazor is
+self-encapsulated" and the `NotifyMutation` trust-design entry in `docs/decisions.md` for the full reasoning.
+Two implementation gotchas worth knowing before touching this: `QueueRealtimeService` cannot resolve Aspire's
+`http://apiservice` logical scheme the way a plain `HttpClient` can (SignalR's WebSocket transport bypasses the
+service-discovery-aware `HttpMessageHandler` pipeline), so it reads the concrete endpoint from
+`services:apiservice:http:0` directly; and `SignalRQueueDemo.AppHost` gives `webfrontend` the identical
+Azurite/`QueueDb` wiring `apiservice` has (including an **absolute** `QueueDb` path — the plain
+`Data Source=App_Data/queue.db` each project's own `appsettings.json` carries is process-relative and would
+otherwise point the two processes at two different files).
 
 ## Containerizing the Angular apps
 
@@ -65,7 +75,7 @@ Each of the three Angular apps builds and runs as its own Docker container, orch
 | Zone | Apps | Auth | Notes |
 |---|---|---|---|
 | Public | `public-checkin`, `queue-display`, Blazor public pages | None (court visitors) | Lightweight hardening only, implemented in `ApiService`: a short-lived HMAC token (`GET /checkin/token`) gates the two state-changing check-in POSTs — `POST /checkin` via `CheckInTokenFilter`, the document upload inline before it buffers the body. Documented honestly — it raises the bar, it is not real security; see `README.md`'s Security model section for exactly what it does and doesn't protect against. |
-| Internal | `internal-queue`, Blazor staff page | Mock auth (`X-Staff-Key` header, `StaffAuthFilter`) | Gates `POST /queue/call-next`, `POST /queue/{id}/complete`, and the two document-viewing endpoints. Models the internal-vs-public boundary that production would enforce with Entra ID — the filter, not just its key, is what production replaces. |
+| Internal | `internal-queue`, Blazor staff page | Mock auth (`X-Staff-Key` header, `StaffAuthFilter`; Blazor: `StaffKeyVerifier` checked in-process at sign-in, no REST round-trip) | Gates `POST /queue/call-next`, `POST /queue/{id}/complete`, and the two document-viewing endpoints. Blazor's document viewer additionally hosts its own local `GET /staff/documents/{entryId}/{docId}` endpoint (never a call to `ApiService`'s REST endpoint) gated by a short-lived per-document HMAC token instead of the header, since an `<iframe>`/`<img>` `src` can't carry one — see `DocumentAccessTokenService`. Models the internal-vs-public boundary that production would enforce with Entra ID — the filter/verifier, not just the key, is what production replaces. |
 
 Restricted CORS (policy `KnownFrontends`) is applied across **both** zones — every browser-reachable surface: the public and staff REST endpoints and the SignalR hub. It is not itself the trust boundary (the auth rows above are); it just keeps the legitimate cross-origin frontends — public *and* staff Angular apps, which all reach the hub for live updates — from being refused by the browser before those checks run, while an unlisted origin still is. The policy accepts two things: any origin listed explicitly in `Cors:AllowedOrigins`, **and** (when `Cors:AllowLoopbackOrigins` is `true`, the POC default) any loopback-family origin — `localhost`, `127.0.0.1`, `::1`, and any `*.localhost` host. That loopback allowance is what makes the containerized apps work: Aspire serves each one under a per-run `*.dev.localhost` hostname (e.g. `http://public-checkin-signalrqueuedemo.dev.localhost:{port}`) that no fixed allowlist can name ahead of time. An earlier attempt to inject those origins from `AppHost.cs` pinned the host to `localhost` and so silently failed CORS in a real browser (right port, wrong host); allowing the loopback family sidesteps Aspire's port/host churn entirely and is safe on this localhost-only, network-isolated machine. For any non-localhost deployment, set `Cors:AllowLoopbackOrigins=false` and list the real origins. See `docs/decisions.md`, the 2026-07-12 entry "CORS accepts any loopback-family origin".
 
@@ -112,6 +122,12 @@ connection that dropped *after* connecting once, not an initial connection that 
 covers the gap. All three Angular apps (`public-checkin`, `internal-queue`, `queue-display`) depend on this one
 service instead of each opening their own `HubConnection` — see [`SignalRQueueDemo.Angular/README.md`](../SignalRQueueDemo.Angular/README.md).
 
+**Blazor reference client (`SignalRQueueDemo.Web/Services/QueueRealtimeService.cs`):** the .NET twin of the
+above — same state shape (snapshot, last update, connection state, the highest-sequence-seen tracking), same
+polling fallback and reconnect-triggered catch-up. The one structural difference: Blazor has no REST client at
+all, so catch-up and the polling fallback call `IQueueRepository` directly (the same in-process method
+`ApiService`'s own REST handlers call) instead of an HTTP `GET`. See [Note on Blazor's client shape](#system-overview) above.
+
 ## Type mirroring (Angular)
 
 `SignalRQueueDemo.Angular/projects/shared/src/lib/models/*.models.ts` hand-mirrors every `SignalRQueueDemo.Contracts` record as a
@@ -125,7 +141,11 @@ generation) was chosen for this POC's size; see `docs/decisions.md` if that judg
 
 ## Persistence
 
-`IQueueRepository` abstracts storage. Two signature-compatible implementations, selected by `Persistence:Provider` config (`Sqlite` | `TableStorage`, default `Sqlite`) — see `Program.cs`:
+`IQueueRepository` abstracts storage — it lives in `SignalRQueueDemo.Shared` (not `ApiService`) so
+`SignalRQueueDemo.Web` can call it directly too (see [Note on Blazor's client shape](#system-overview) above).
+Two signature-compatible implementations, selected by `Persistence:Provider` config (`Sqlite` | `TableStorage`,
+default `Sqlite`) — registered by `QueueServiceCollectionExtensions.AddQueueService()`, which both `ApiService`
+and `Web`'s `Program.cs` call:
 
 - **SQLite via EF Core** (`SqliteQueueRepository`) — default, zero setup.
 - **Azure Table Storage via Azurite** (`TableStorageQueueRepository`) — demonstrates the cheaper Azure Storage path noted in ADR-0001 as "worth defaulting to on future low-complexity projects". `SignalRQueueDemo.AppHost` always starts the Azurite Table resource regardless of which provider is active, so flipping the config value is the entire migration — no other code change, no restart-time resource wiring to add.

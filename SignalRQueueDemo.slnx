@@ -1,7 +1,7 @@
 <Solution>
   <Project Path="SignalRQueueDemo.ApiService/SignalRQueueDemo.ApiService.csproj" />
   <Project Path="SignalRQueueDemo.AppHost/SignalRQueueDemo.AppHost.csproj" />
-  <Project Path="SignalRQueueDemo.Contracts/SignalRQueueDemo.Contracts.csproj" />
   <Project Path="SignalRQueueDemo.ServiceDefaults/SignalRQueueDemo.ServiceDefaults.csproj" />
+  <Project Path="SignalRQueueDemo.Shared/SignalRQueueDemo.Shared.csproj" />
   <Project Path="SignalRQueueDemo.Web/SignalRQueueDemo.Web.csproj" />
 </Solution>
