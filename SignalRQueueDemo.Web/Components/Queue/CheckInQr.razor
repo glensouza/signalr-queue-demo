@@ -1,33 +1,26 @@
 @using SignalRQueueDemo.Shared
-@inject IConfiguration Configuration
+@inject NavigationManager Navigation
 
-@if (this.checkInUrl is not null)
-{
-    <aside class="check-in-cta">
-        <p class="cta-label">Check in from your phone</p>
-        @if (this.qrSvg is not null)
-        {
-            <div class="cta-qr">
-                @((MarkupString)this.qrSvg)
-            </div>
-        }
-        <p class="cta-url">@this.checkInUrl</p>
-    </aside>
-}
+<aside class="check-in-cta">
+    <p class="cta-label">Check in from your phone</p>
+    <div class="cta-qr">
+        @((MarkupString)this.qrSvg)
+    </div>
+    <p class="cta-url">@this.checkInUrl</p>
+</aside>
 
 @code {
-    // The check-in URL and its QR never change for the app's lifetime, so both are computed once in
-    // OnInitialized rather than in property getters — the Display board re-renders on every QueueUpdated
-    // broadcast, and re-encoding the SVG on each of those renders would be pure wasted work.
-    private string? checkInUrl;
-    private string? qrSvg;
+    // Self-contained by design: the Blazor board advertises its OWN /checkin page, not the Angular public-checkin
+    // app. The URL is derived from the app's own base address (NavigationManager) — no PublicCheckinUrl config,
+    // no awareness of the API or the Angular apps. Both URL and QR are computed once in OnInitialized rather than
+    // in property getters, since neither changes for the app's lifetime and the Display board re-renders on every
+    // QueueUpdated broadcast — re-encoding the SVG on each of those would be pure wasted work.
+    private string checkInUrl = string.Empty;
+    private string qrSvg = string.Empty;
 
     protected override void OnInitialized()
     {
-        this.checkInUrl = Configuration["PublicCheckinUrl"];
-        if (this.checkInUrl is not null)
-        {
-            this.qrSvg = QrCodeHelper.GenerateSvg(this.checkInUrl);
-        }
+        this.checkInUrl = Navigation.ToAbsoluteUri("checkin").ToString();
+        this.qrSvg = QrCodeHelper.GenerateSvg(this.checkInUrl);
     }
 }
