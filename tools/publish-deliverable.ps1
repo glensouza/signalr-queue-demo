@@ -7,16 +7,35 @@
     The court deliverable must contain no evidence of AI-assisted development.
     That means more than skipping files: some tracked files carry AI traces in
     their CONTENT (README references to CLAUDE.md and model labels, the drawio
-    file's agent="claude-code" header). This script therefore does three passes:
+    file's agent="claude-code" header). This script therefore does five passes:
 
-      1. COPY   - robocopy the repo to the destination, excluding AI config,
-                  this tools folder, git internals, and build output.
-      2. SCRUB  - apply targeted in-file replacements to remove AI references.
-                  Each scrub warns if its target text was not found (drift
-                  detector: if the README changes, update the scrub here).
-      3. VERIFY - scan every copied text file for banned terms and FAIL LOUDLY
-                  if anything slipped through. This is the safety net for
-                  future files this script doesn't know about yet.
+      1. COPY      - robocopy the repo to the destination, excluding AI
+                     config, this tools folder, git internals, and build
+                     output.
+      2. NORMALIZE - rewrite every copied text file's line endings to LF.
+                     robocopy copies this Windows working tree's checked-out
+                     CRLF bytes verbatim, but the destination repo's git
+                     blobs are stored as LF (checked out as CRLF locally only
+                     via core.autocrlf on demand) -- so a raw byte-for-byte
+                     copy never matches what git considers clean. Without
+                     this step, `git status` in the destination flags nearly
+                     every unchanged file as modified (robocopy also gives
+                     every file a fresh mtime, so git can't shortcut the stat
+                     check), burying the files that actually changed.
+      3. SCRUB     - apply targeted in-file replacements to remove AI
+                     references, plus a pass that strips bare internal
+                     GitHub issue-number references (the court/vendor team
+                     has no access to this private repo's tracker, so a
+                     dangling "#13" is meaningless noise). Each named scrub
+                     warns if its target text was not found (drift detector:
+                     if the README changes, update the scrub here).
+      4. VERIFY    - scan every copied text file for banned terms and FAIL
+                     LOUDLY if anything slipped through. This is the safety
+                     net for future files this script doesn't know about yet.
+      5. RECONCILE - `git add -A` (staging only, never a commit) so the
+                     destination's index reflects reality; see the rationale
+                     at that step for why this is necessary even after
+                     NORMALIZE.
 
     The destination's .git folder is never touched, so the target can be a
     working clone of the court repo. Commit/push there manually (a manual git
@@ -58,7 +77,8 @@ $excludeDirs = @(
 $excludeFiles = @(
     'CLAUDE.md', 'CLAUDE.local.md',              # AI contributor standards
     'Claude Code starting prompt*.md',           # prompt docs, if ever re-added
-    '*.user'
+    '*.user',
+    'architecture.drawio'                        # editable diagram source; ship the rendered .png only
 )
 
 # ---------------------------------------------------------------------------
@@ -85,6 +105,23 @@ $globalScrubs = @(
     @{ Find = 'CLAUDE.md'; Replace = 'CONTRIBUTING.md' }
 )
 
+# ---------------------------------------------------------------------------
+# Bare internal GitHub issue-number references (docs/decisions.md and friends
+# narrate the POC's build history as "issue #13 needed to decide...", "(#17)",
+# "#9-#11"). The vendor/court team reading the deliverable has no access to
+# this private repo's issue tracker, so a dangling "#13" is meaningless noise
+# at best and an accidental hint at internal process at worst. This is a
+# regex (not a literal-text $globalScrubs entry) because the phrasing varies
+# per instance; it's restricted to *.md so it can never touch a CSS hex color
+# (#1a2b3c), a C# preprocessor directive (#region), or a TS private field
+# (#fieldName) elsewhere in the tree. The negative lookahead excludes
+# markdown anchor links, which share the "#digit" shape but are followed by
+# a hyphenated slug, e.g. "(#4-signalrqueuedemoweb--blazor-server...)" --
+# real issue refs are followed by punctuation, whitespace, or another "#"
+# (a range like "#9-#11"), never by "-<letter>".
+$issueRefPattern = '#(\d{1,4})(?!-[a-zA-Z])'
+
+
 $scrubs = @(
     @{
         File    = 'README.md'
@@ -95,11 +132,6 @@ $scrubs = @(
         File    = 'README.md'
         Find    = "| ``CLAUDE.md`` | Coding + documentation standards for all contributors. |`n"
         Replace = ''
-    }
-    @{
-        File    = 'docs/architecture.drawio'
-        Find    = 'agent="claude-code"'
-        Replace = 'agent="drawio"'
     }
 )
 
@@ -135,11 +167,30 @@ robocopy $Source $Destination /E /NFL /NDL /NJH /NJS /NP `
     /XD $excludeDirs `
     /XF $excludeFiles | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
-$script:copied = (Get-ChildItem -Recurse -File $Destination | Where-Object FullName -NotMatch '\\\.git\\').Count
+$destinationFiles = Get-ChildItem -Recurse -File $Destination | Where-Object FullName -NotMatch '\\\.git\\'
+$script:copied = $destinationFiles.Count
 Write-Host "Copied $copied files." -ForegroundColor Cyan
 
 # ---------------------------------------------------------------------------
-# 2. SCRUB
+# 2. NORMALIZE - CRLF -> LF on every copied text file (see rationale above).
+# *.sh is skipped: .gitattributes already forces `eol=lf` on checkout, so the
+# source working tree copy robocopy read was already LF.
+# ---------------------------------------------------------------------------
+$textFiles = $destinationFiles | Where-Object { $textExtensions -contains $_.Extension -and $_.Extension -ne '.sh' }
+$normalized = 0
+foreach ($file in $textFiles) {
+    $content = Get-Content -Raw $file.FullName
+    if ($null -eq $content) { continue }
+    $lf = $content -replace "`r`n", "`n" -replace "`r", "`n"
+    if ($lf -ne $content) {
+        Set-Content -Path $file.FullName -Value $lf -NoNewline
+        $normalized++
+    }
+}
+Write-Host "Normalized $normalized file(s) to LF." -ForegroundColor Cyan
+
+# ---------------------------------------------------------------------------
+# 3. SCRUB
 # ---------------------------------------------------------------------------
 foreach ($scrub in $scrubs) {
     $path = Join-Path $Destination $scrub.File
@@ -183,8 +234,24 @@ foreach ($g in $globalScrubs) {
     }
 }
 
+# Bare issue-number reference scrub (see $issueRefPattern above), *.md only.
+$issueRefFiles = $globalScrubFiles | Where-Object Extension -eq '.md'
+$issueRefHits = 0
+foreach ($file in $issueRefFiles) {
+    $content = Get-Content -Raw $file.FullName
+    if ($null -eq $content) { continue }
+    $replaced = [regex]::Replace($content, $issueRefPattern, '$1')
+    if ($replaced -ne $content) {
+        Set-Content -Path $file.FullName -Value $replaced -NoNewline
+        $issueRefHits += [regex]::Matches($content, $issueRefPattern).Count
+    }
+}
+if ($issueRefHits -gt 0) {
+    Write-Host "Stripped $issueRefHits internal issue-number reference(s) from $($issueRefFiles.Count) *.md file(s)." -ForegroundColor Green
+}
+
 # ---------------------------------------------------------------------------
-# 3. VERIFY - the safety net. Fails the publish if anything slipped through.
+# 4. VERIFY - the safety net. Fails the publish if anything slipped through.
 # ---------------------------------------------------------------------------
 Write-Host "Verifying no banned terms remain..." -ForegroundColor Cyan
 $hits = Get-ChildItem -Recurse -File $Destination |
@@ -201,7 +268,30 @@ if ($hits) {
 
 Write-Host ""
 Write-Host "Deliverable is clean: $copied files in $Destination" -ForegroundColor Green
-Write-Host "Next: review 'git status' in the destination repo and commit/push manually." -ForegroundColor Green
+
+# ---------------------------------------------------------------------------
+# 5. RECONCILE - `git add -A`, staging only, no commit.
+# ---------------------------------------------------------------------------
+# robocopy gives every copied file a fresh mtime, which invalidates git's
+# cached stat info for the whole tree ("racy git"). `git status`, run cold
+# right after a bulk copy like this, falls back to a cheaper stat-based check
+# for files it can't trust the cache for and reports them modified even when
+# the content (post NORMALIZE step above) is byte-for-byte identical to what
+# HEAD already has -- confirmed by comparing against `git diff`/`hash-object`,
+# which do the full clean-filter-aware comparison and show nothing. `git add
+# -A` forces that same full comparison for every file and persists the
+# result to the index, so a `git status` run immediately afterward reports
+# only real changes. This is why the deliverable used to look like it needed
+# committing every file on every publish, even when nothing had changed.
+# Staging isn't committing -- `git reset` undoes it trivially -- so this is
+# safe to do unconditionally; it only runs if the destination is already a
+# git working copy (skipped on a from-scratch destination with no .git yet).
+if (Test-Path (Join-Path $Destination '.git')) {
+    git -C $Destination add -A 2>$null
+    Write-Host "Staged the deliverable (git add -A) -- 'git status'/'git diff --cached' now show only real changes." -ForegroundColor Cyan
+}
+
+Write-Host "Next: review 'git status'/'git diff --cached' in the destination repo and commit/push manually." -ForegroundColor Green
 # Explicit success exit - otherwise robocopy's non-zero success codes (1 = files
 # copied) leak out as this script's exit code and look like a failure in CI.
 exit 0
