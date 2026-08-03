@@ -22,8 +22,15 @@ public sealed class TableStorageDocumentRepository : IDocumentRepository
   private readonly TableClient entriesTable;
   private readonly TableClient documentsTable;
 
-  public TableStorageDocumentRepository(TableServiceClient tableServiceClient)
+  // Same per-app partition TableStorageQueueRepository writes entry rows under (Persistence:StorePartition) —
+  // entries live at PartitionKey == partitionKey, not the QueueEntryTableEntity.PartitionKeyValue default, so
+  // EntryExistsAsync must look them up under the same value or every lookup 404s regardless of whether the
+  // entry actually exists.
+  private readonly string partitionKey;
+
+  public TableStorageDocumentRepository(TableServiceClient tableServiceClient, string partitionKey)
   {
+    this.partitionKey = partitionKey;
     this.entriesTable = tableServiceClient.GetTableClient(TableStorageQueueRepository.EntriesTableName);
     this.documentsTable = tableServiceClient.GetTableClient(DocumentsTableName);
   }
@@ -33,7 +40,7 @@ public sealed class TableStorageDocumentRepository : IDocumentRepository
     try
     {
       await this.entriesTable.GetEntityAsync<QueueEntryTableEntity>(
-        QueueEntryTableEntity.PartitionKeyValue, entryId, cancellationToken: ct);
+        this.partitionKey, entryId, cancellationToken: ct);
       return true;
     }
     catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)

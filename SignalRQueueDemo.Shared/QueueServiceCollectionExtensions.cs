@@ -102,7 +102,8 @@ public static class QueueServiceCollectionExtensions
         string storePartition = ResolveStorePartition(builder.Configuration);
         builder.Services.AddSingleton<IQueueRepository>(sp =>
             new TableStorageQueueRepository(sp.GetRequiredService<TableServiceClient>(), storePartition));
-        builder.Services.AddSingleton<IDocumentRepository, TableStorageDocumentRepository>();
+        builder.Services.AddSingleton<IDocumentRepository>(sp =>
+            new TableStorageDocumentRepository(sp.GetRequiredService<TableServiceClient>(), storePartition));
         break;
 
       default:
