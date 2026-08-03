@@ -1,6 +1,6 @@
 # SignalR Queue Demo
 
-Proof-of-concept for the DASH 2.0 walk-in check-in / queue system at San Bernardino Superior Court, backing **ADR-0001: Real-Time Messaging Topology for DASH 2.0 and Walk-In Queue Management** (Status: **Accepted**, 2026-07-09). The ADR lives in the court OneDrive, not this repo — see [Reference](#reference).
+Proof-of-concept for the DASH 2.0 walk-in check-in / queue system at San Bernardino Superior Court, backing **ADR-0001: Real-Time Messaging Topology for DASH 2.0 and Walk-In Queue Management** (Status: **Accepted**, 2026-07-09) — see [`docs/adr-0001.md`](docs/adr-0001.md) for the full decision record.
 
 This POC will be handed to the vendor dev team as a **reference implementation** — code clarity and comments matter more than cleverness. Targets **.NET 10 LTS** with modern C# (primary constructors, collection expressions, required members). See [CLAUDE.md](CLAUDE.md) for the coding and documentation standards every contributor (human or AI) follows.
 
@@ -13,6 +13,38 @@ DASH 2.0, built by the Apex Systems dev team (Vikrant Salunkhe, Timothy Meza, Mo
 - **Walk-in queue management** — people line up each morning (~7am), check in, and are served in turn. Built as an independent, reusable component (own database, separate from the DASH internal-portal database, both on one SQL Server instance) so other court departments can plug into it later via connection string.
 
 > **Production vs. POC note:** production confirmed kiosk (check-in) and the public queue display as two pages within one web application. This POC deliberately builds them as **three separate Angular apps** (plus Blazor equivalents) — the goal here is comparing frontend stacks and container orchestration, not mirroring the production deployment shape.
+
+## Architecture
+
+![Architecture diagram](docs/architecture.png)
+
+Everything runs locally under one .NET Aspire AppHost — no real Azure resources, emulators only (court constraint: no outbound cloud calls from the POC). `SignalRQueueDemo.ApiService` hosts the self-hosted `QueueHub` and serves the three Angular apps, split across a **public trust zone** (`public-checkin`, `queue-display` — no auth) and an **internal trust zone** (`internal-queue` — mock staff auth). `SignalRQueueDemo.Web` (Blazor) sits alongside as a fully self-encapsulated third implementation of the same three experiences — its own `QueueHub`, its own SQLite file, no runtime dependency on `ApiService` at all. Both hosts read/write through the same `IQueueRepository`/`IDocumentRepository` abstractions in `SignalRQueueDemo.Shared`, backed by either SQLite (EF Core) or Azure Table Storage + Blob Storage (Azurite emulator), selected by config — see [Flipping the persistence provider](#flipping-the-persistence-provider).
+
+**Reconnect / catch-up protocol.** The core demo requirement: a client that disconnects must catch up on missed state, not just resume live pushes from wherever it reconnects. Every state change increments a monotonic sequence number; a reconnecting client replays what it missed via `GET /queue/since/{sequenceNumber}` rather than relying on push-only delivery:
+
+```mermaid
+sequenceDiagram
+    participant C as Client (any frontend)
+    participant H as QueueHub
+    participant A as API (QueueEndpoints)
+    participant R as IQueueRepository
+
+    Note over A,R: every state change increments a monotonic sequence number
+    C->>H: connect
+    H->>R: GetStateAsync (latest seq)
+    H-->>C: CurrentSequence(N) — baseline even if nothing changes for a while
+    A-->>H: after each checkin/call-next/complete commits...
+    H-->>C: QueueUpdated (live push, carries seq N+1, N+2, ...)
+    Note over C: connection drops — client remembers the highest seq it saw
+    C->>A: GET /queue/since/{lastSeq}
+    A->>R: GetChangesSinceAsync(lastSeq)
+    R-->>A: missed QueueChangeEvents (or full QueueSnapshot if lastSeq is unrecognized/too far behind)
+    A-->>C: QueueChangesSinceResponse
+    C->>H: reconnect
+    H-->>C: CurrentSequence(latest) — resume live pushes from here
+```
+
+A broadcast only fires after its triggering write commits, so a client is always guaranteed to see committed state when it calls `GET /queue/since/{seq}` right after a push. Broadcasts from *concurrent* requests aren't guaranteed to arrive in strict sequence-number order, though — every client tracks the **highest** sequence number seen (never overwritten, only `Math.max`'d), not just the most recently arrived message. Both the Angular `QueueHubService` and Blazor's `QueueRealtimeService` implement this exact protocol, plus a polling fallback for when the initial SignalR connection never comes up at all.
 
 ## Real-time architecture decision (ADR-0001)
 
@@ -61,7 +93,7 @@ Endpoints (all shapes come from `SignalRQueueDemo.Contracts`):
 | `GET /queue/{id}/documents/{docId}` | mock staff auth | Streams a single uploaded document's content back. |
 
 - **`QueueHub`** (`SignalRQueueDemo.ApiService/Hubs/QueueHub.cs`) broadcasts `QueueUpdated` on every state change and sends `CurrentSequence` on connect so a client always has a baseline. Self-hosted in-process (ADR-0001 Option C), with a feature-flag path to Azure SignalR (below).
-- **Reconnect resiliency:** every state change increments a **monotonic sequence number** persisted in a change-event log. Reconnecting clients call `GET /queue/since/{seq}` to replay what they missed — push-only delivery is never relied on. See [`docs/architecture.md`](docs/architecture.md#reconnect--catch-up-protocol) for the full sequence diagram and the push-ordering caveat.
+- **Reconnect resiliency:** every state change increments a **monotonic sequence number** persisted in a change-event log. Reconnecting clients call `GET /queue/since/{seq}` to replay what they missed — push-only delivery is never relied on. See [Architecture](#architecture) above for the full sequence diagram and the push-ordering caveat.
 - **Persistence:** behind an `IQueueRepository` interface with two signature-compatible implementations — **SQLite via EF Core** (default) and **Azure Table Storage** (against the Azurite emulator) — selected by config. `SignalRQueueDemo.AppHost` always starts the Azurite Table resource, so flipping the config value at [Flipping the persistence provider](#flipping-the-persistence-provider) is the entire migration, no other code or infrastructure change.
 - **Auth model:** restricted CORS + a short-lived HMAC check-in token harden the public check-in path; a static `X-Staff-Key` header models the internal-vs-public trust boundary on staff endpoints — no real Entra ID in the POC. See [Security model](#security-model) below for exactly what's mocked, what's real, and what production must replace.
 
@@ -106,9 +138,9 @@ sibling process, and Blazor hosts its **own** SignalR `QueueHub` — the same hu
 `SignalRQueueDemo.Shared.Realtime` and is hosted identically by both `ApiService` (for the Angular apps) and
 `Web` (for its Blazor circuits). A direct `HubConnection` (`QueueRealtimeService`, the .NET twin of the Angular
 shared library's `QueueHubService`) connects to Blazor's own hub for live updates and, after one of its own local
-writes, calls that hub's `NotifyMutation` so every other Blazor circuit finds out (see
-[`docs/decisions.md`](docs/decisions.md) for the trust design — it never trusts a caller-supplied broadcast
-payload, only a sequence number, re-reading the actual change from the repository before broadcasting). Because
+writes, calls that hub's `NotifyMutation` so every other Blazor circuit finds out (the trust design here never
+trusts a caller-supplied broadcast payload, only a sequence number, re-reading the actual change from the
+repository before broadcasting). Because
 the two stacks now run **separate** hubs in separate processes, a Blazor write no longer live-pushes to Angular
 clients or vice versa — the stacks are independent implementations that share only the `Shared` library.
 
@@ -199,6 +231,7 @@ Work is executed as an ordered, dependency-aware backlog of 14 work items, each 
 | `SignalRQueueDemo.Angular/` | Angular workspace: `projects/shared` library (TypeScript `Contracts` mirrors, `QueueApiService`, `QueueHubService`) plus `projects/public-checkin`, `projects/internal-queue`, `projects/queue-display` app shells (real UIs land in #9-#11). See [`SignalRQueueDemo.Angular/README.md`](SignalRQueueDemo.Angular/README.md). |
 | `SignalRQueueDemo.ServiceDefaults` | Shared Aspire defaults — OpenTelemetry, health checks, service discovery. |
 | `CLAUDE.md` | Coding + documentation standards for all contributors. |
+| `docs/adr-0001.md` | ADR-0001 (Accepted 2026-07-09), the real-time messaging topology decision this whole POC backs. |
 | `docs/architecture.md` | Living architecture doc (Mermaid diagrams, trust boundaries, reconnect protocol). |
 | `docs/architecture.drawio` | Editable diagram source (export to `architecture.drawio.png` — workflow in the doc). |
 | `docs/decisions.md` | Dated log of implementation decisions not fully covered by the original spec. |
@@ -367,7 +400,7 @@ This section is meant to help the team pick a direction — neither stack "wins"
 
 ## Reference
 
-- ADR-0001 (Accepted 2026-07-09): court OneDrive, `ECA Discovery\Solutions\DASH 2.0\ADR-0001 - DASH 2.0 Real-Time Messaging Topology.docx`.
+- ADR-0001 (Accepted 2026-07-09): [`docs/adr-0001.md`](docs/adr-0001.md) in this repo.
 - Architecture diagrams (court OneDrive, same folder): `Dash 2.0.png`, `DASH 2.0 Flow.png`, `Architectural Design Diagram Kiosk ver 3.1.png`, `DASH 2.0 Court User Portal - High Level Architecture Diagram 1.png`.
 - [Azure SignalR Local Emulator (serverless only)](https://learn.microsoft.com/en-us/azure/azure-signalr/signalr-howto-emulator) · [Aspire Azure SignalR integration](https://learn.microsoft.com/en-us/dotnet/aspire/real-time/azure-signalr-scenario).
 - No production Azure resources or real court data belong in this repo — synthetic test data only, no secrets in source control, no public/third-party API calls.

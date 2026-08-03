@@ -78,7 +78,8 @@ $excludeFiles = @(
     'CLAUDE.md', 'CLAUDE.local.md',              # AI contributor standards
     'Claude Code starting prompt*.md',           # prompt docs, if ever re-added
     '*.user',
-    'architecture.drawio'                        # editable diagram source; ship the rendered .png only
+    'architecture.drawio',                       # editable diagram source; ship the rendered .png only
+    'architecture.md', 'decisions.md'            # internal engineering detail; README.md is the vendor-facing doc now
 )
 
 # ---------------------------------------------------------------------------
@@ -131,6 +132,25 @@ $scrubs = @(
     @{
         File    = 'README.md'
         Find    = "| ``CLAUDE.md`` | Coding + documentation standards for all contributors. |`n"
+        Replace = ''
+    }
+    # docs/architecture.md, docs/architecture.drawio, and docs/decisions.md are all
+    # excluded from the deliverable (see $excludeFiles above) -- internal engineering
+    # detail, not vendor-facing. Their "Current repo status" table rows would
+    # otherwise describe files that don't exist in the delivered tree.
+    @{
+        File    = 'README.md'
+        Find    = "| ``docs/architecture.md`` | Living architecture doc (Mermaid diagrams, trust boundaries, reconnect protocol). |`n"
+        Replace = ''
+    }
+    @{
+        File    = 'README.md'
+        Find    = "| ``docs/architecture.drawio`` | Editable diagram source (export to ``architecture.drawio.png`` — workflow in the doc). |`n"
+        Replace = ''
+    }
+    @{
+        File    = 'README.md'
+        Find    = "| ``docs/decisions.md`` | Dated log of implementation decisions not fully covered by the original spec. |`n"
         Replace = ''
     }
 )
